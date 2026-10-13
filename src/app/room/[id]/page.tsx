@@ -3,16 +3,35 @@ import { notFound } from "next/navigation";
 import { getTransport } from "@/lib/transport";
 import { mergeResultCards } from "@/lib/result-card";
 import { recomputeHash } from "@/lib/seed";
+import { assessCard, type AgentCard } from "@/lib/agent-card";
+import {
+  demoBuyerCard,
+  demoExpiredCard,
+  demoFlaggedCard,
+  verifyCard,
+} from "@/lib/agent-card-demo";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 
 /**
  * Room page — the core screen.
  *
- * Left: the result cards for this room (the machine-readable outcomes).
- * Right: participants and their verification level (agent cards land in D2).
- * The display rule is enforced here: "agreed" only when every required party
- * signed the same hash; otherwise it shows partial / pending.
+ * Result cards on the left; participants on the right. Verification is shown
+ * claim-by-claim: evidence / self-reported / unverified / lapsed. There are no
+ * bare booleans — a receiving agent (and the judge) sees exactly what is
+ * checkable.
  */
+
+function cardsForRoom(roomId: string): AgentCard[] {
+  if (roomId === "room-shell") return [demoBuyerCard(), demoFlaggedCard()];
+  if (roomId === "room-northwind") return [demoBuyerCard(), demoExpiredCard()];
+  return [demoBuyerCard()];
+}
+
+const STATUS_TONE = {
+  evidence: "green",
+  self_reported: "amber",
+  unverified: "neutral",
+} as const;
 
 export default async function RoomPage({
   params,
@@ -27,6 +46,17 @@ export default async function RoomPage({
 
   const cards = await transport.listResultCards(id);
   const merged = mergeResultCards(cards);
+
+  const agentCards = cardsForRoom(id).map((card) => ({
+    card,
+    assessment: assessCard(card, verifyCard(card)),
+  }));
+
+  const flagged = agentCards.some(
+    (c) =>
+      c.card.claims.screening.status === "evidence" &&
+      c.card.claims.screening.evidence?.payload.matched === true,
+  );
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-6 py-12">
@@ -44,6 +74,12 @@ export default async function RoomPage({
           <Badge tone="neutral">{room.scenario}</Badge>
         </div>
         <p className="text-sm text-neutral-600 dark:text-neutral-400">{room.summary}</p>
+        {flagged && (
+          <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-300">
+            Screening flag: a counterparty&apos;s card trips the synthetic list.
+            Negotiation is held until a human clears it.
+          </p>
+        )}
       </header>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -104,23 +140,44 @@ export default async function RoomPage({
           <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
             Participants
           </h2>
-          {room.participants.map((p) => (
-            <Card key={p}>
-              <CardHeader className="gap-1 p-4">
-                <CardTitle className="text-sm">{p}</CardTitle>
-                <div className="flex items-center gap-2">
-                  <Badge tone="blue">L0</Badge>
-                  <span className="text-xs text-neutral-500">
-                    self-declared, self-signed
-                  </span>
+          {agentCards.map(({ card, assessment }) => (
+            <Card key={card.agent_id}>
+              <CardHeader className="gap-2 p-4">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm">{card.display_name}</CardTitle>
+                  <Badge tone={assessment.lapsed ? "amber" : "blue"}>
+                    {assessment.lapsed ? "claims lapsed" : assessment.level}
+                  </Badge>
                 </div>
+                <div className="text-xs text-neutral-500">
+                  owner: {card.owner.name}
+                  {assessment.lapsed && " · expired/revoked"}
+                </div>
+                <ul className="mt-1 flex flex-col gap-1">
+                  {assessment.claims.map((c) => (
+                    <li key={c.key} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="text-neutral-600 dark:text-neutral-400">
+                        <span className="font-mono text-[10px] text-neutral-400">{c.level}</span>{" "}
+                        {c.key}
+                      </span>
+                      <Badge tone={STATUS_TONE[c.status as keyof typeof STATUS_TONE] ?? "neutral"}>
+                        {c.label}
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
               </CardHeader>
             </Card>
           ))}
           <Card>
             <CardContent className="pt-5 text-xs text-neutral-500">
-              Verification badges describe what each level actually is. A signed
-              self-declaration proves key control — not real-world identity.
+              Each claim is shown as evidence / self-reported / unverified — never a
+              bare boolean. L0 key authentication is separate from the authority
+              claims (L1–L3), so a lapsed card still authenticates its messages.
+              <br />
+              <br />
+              An agent discloses only what <em>its own</em> owner policy allows — a
+              counterparty&apos;s card is never authorization for us to share our data.
             </CardContent>
           </Card>
         </aside>
