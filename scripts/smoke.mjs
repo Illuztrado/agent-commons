@@ -113,6 +113,35 @@ checks.push(
   [built.assessment.keyAuthenticated === true, "api: agent card key authenticates", "true"],
 );
 
+// Multi-party consensus (scenario 4).
+const multi = await post("/api/negotiate-multi", { preset: "agree" });
+checks.push(
+  [multi.status === "agreed", "multi: three agents reach consensus", "agreed"],
+  [
+    multi.progression.length === 3 &&
+      multi.progression[0].agreement === "partial" &&
+      multi.progression[1].agreement === "partial" &&
+      multi.progression[2].agreement === "full",
+    "multi: agreement climbs partial -> partial -> full",
+    "1/3, 2/3, 3/3",
+  ],
+  [multi.final.agreement === "full", "multi: final card is full agreement", "full"],
+);
+
+const multiNoMatch = await post("/api/negotiate-multi", { preset: "no-match" });
+checks.push([
+  multiNoMatch.status === "no-match" && multiNoMatch.blocked_by.includes("location"),
+  "multi: no common value ends in no-match naming the blocking field",
+  "no-match + blocked_by",
+]);
+
+const multiPage = await get("/multi");
+checks.push([
+  multiPage.includes("Multi-party consensus"),
+  "multi: consensus page renders",
+  "Multi-party consensus",
+]);
+
 let failed = 0;
 for (const [ok, label, needle] of checks) {
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}  (${JSON.stringify(needle)})`);

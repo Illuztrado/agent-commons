@@ -45,6 +45,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               Live negotiation
             </Link>
             <Link
+              href="/multi"
+              className="text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
+            >
+              Multi-party
+            </Link>
+            <Link
               href="/agent"
               className="text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
             >
