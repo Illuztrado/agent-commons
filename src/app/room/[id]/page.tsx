@@ -9,6 +9,7 @@ import {
   demoExpiredCard,
   demoFlaggedCard,
   verifyCard,
+  verifyEvidence,
 } from "@/lib/agent-card-demo";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 
@@ -47,15 +48,18 @@ export default async function RoomPage({
   const cards = await transport.listResultCards(id);
   const merged = mergeResultCards(cards);
 
-  const agentCards = cardsForRoom(id).map((card) => ({
-    card,
-    assessment: assessCard(card, verifyCard(card)),
-  }));
+  const agentCards = cardsForRoom(id).map((card) => {
+    const assessment = assessCard(card, verifyCard(card));
+    // A receiver checks each evidence object against its stated issuer key.
+    const evidenceChecks = assessment.claims.map((c) => {
+      const ev = card.claims[c.key].evidence;
+      return { key: c.key, verified: ev ? verifyEvidence(ev) : null, issuer: ev?.issuer ?? null };
+    });
+    return { card, assessment, evidenceChecks };
+  });
 
   const flagged = agentCards.some(
-    (c) =>
-      c.card.claims.screening.status === "evidence" &&
-      c.card.claims.screening.evidence?.payload.matched === true,
+    (c) => c.card.claims.screening.evidence?.payload.matched === true,
   );
 
   return (
@@ -140,7 +144,7 @@ export default async function RoomPage({
           <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
             Participants
           </h2>
-          {agentCards.map(({ card, assessment }) => (
+          {agentCards.map(({ card, assessment, evidenceChecks }) => (
             <Card key={card.agent_id}>
               <CardHeader className="gap-2 p-4">
                 <div className="flex items-center justify-between">
@@ -154,17 +158,30 @@ export default async function RoomPage({
                   {assessment.lapsed && " · expired/revoked"}
                 </div>
                 <ul className="mt-1 flex flex-col gap-1">
-                  {assessment.claims.map((c) => (
-                    <li key={c.key} className="flex items-center justify-between gap-2 text-xs">
-                      <span className="text-neutral-600 dark:text-neutral-400">
-                        <span className="font-mono text-[10px] text-neutral-400">{c.level}</span>{" "}
-                        {c.key}
-                      </span>
-                      <Badge tone={STATUS_TONE[c.status as keyof typeof STATUS_TONE] ?? "neutral"}>
-                        {c.label}
-                      </Badge>
-                    </li>
-                  ))}
+                  {assessment.claims.map((c) => {
+                    const check = evidenceChecks.find((e) => e.key === c.key);
+                    return (
+                      <li key={c.key} className="flex flex-col gap-1 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-neutral-600 dark:text-neutral-400">
+                            <span className="font-mono text-[10px] text-neutral-400">{c.level}</span>{" "}
+                            {c.key}
+                          </span>
+                          <Badge tone={STATUS_TONE[c.status as keyof typeof STATUS_TONE] ?? "neutral"}>
+                            {c.label}
+                          </Badge>
+                        </div>
+                        {check?.verified !== null && check?.verified !== undefined && (
+                          <div className="flex items-center justify-between gap-2 pl-2 text-[11px] text-neutral-500">
+                            <span>evidence signature vs issuer key</span>
+                            <Badge tone={check.verified ? "green" : "red"}>
+                              {check.verified ? "valid" : "invalid"}
+                            </Badge>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </CardHeader>
             </Card>
@@ -172,8 +189,11 @@ export default async function RoomPage({
           <Card>
             <CardContent className="pt-5 text-xs text-neutral-500">
               Each claim is shown as evidence / self-reported / unverified — never a
-              bare boolean. L0 key authentication is separate from the authority
-              claims (L1–L3), so a lapsed card still authenticates its messages.
+              bare boolean. Every evidence object is checked against its{" "}
+              <em>issuer key</em>: a valid signature proves authorship, not
+              independent execution. L0 key authentication is separate from the
+              authority claims (L1–L3), so a lapsed card still authenticates its
+              messages.
               <br />
               <br />
               An agent discloses only what <em>its own</em> owner policy allows — a

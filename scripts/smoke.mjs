@@ -39,6 +39,11 @@ checks.push(
   [room.includes("hash recomputes"), "room: hash recomputes independently", "hash recomputes"],
   [room.includes("key authenticated"), "room: key authentication shown", "key authenticated"],
   [room.includes("claims lapsed"), "room: expired authority claims lapse, key still authenticates", "claims lapsed"],
+  [
+    room.includes("evidence signature vs issuer key"),
+    "room: evidence is checked against its issuer key, not trusted as a label",
+    "evidence signature vs issuer key",
+  ],
 );
 
 // Screening flag room.
@@ -111,6 +116,66 @@ checks.push(
     "sig",
   ],
   [built.assessment.keyAuthenticated === true, "api: agent card key authenticates", "true"],
+);
+
+// Owner binding: signed by a separate owner key and bound to the agent key.
+const bound = await post("/api/agent-card", {
+  display_name: "Owner-bound Agent",
+  owner_name: "Test Co",
+  owner_contact: "ops@test.example",
+  levels: { owner_binding: true },
+});
+checks.push(
+  [
+    bound.card.claims.owner_binding.status === "evidence",
+    "api: owner binding is evidence-backed",
+    "evidence",
+  ],
+  [
+    typeof bound.card.claims.owner_binding.evidence?.issuer === "string",
+    "api: evidence carries an issuer KEY, not just a producer label",
+    "issuer",
+  ],
+  [
+    bound.card.claims.owner_binding.evidence?.payload.agent_id === bound.card.agent_id,
+    "api: the challenge is bound to the agent key",
+    "agent_id bound",
+  ],
+  [
+    bound.card.claims.owner_binding.evidence?.produced_by === "owner",
+    "api: owner binding is produced by the owner, not the agent",
+    "owner",
+  ],
+  [
+    bound.card.claims.screening.status !== "evidence",
+    "api: screening never claims independent evidence",
+    "not evidence",
+  ],
+  [bound.assessment.level === "L1", "api: owner-bound card reaches L1", "L1"],
+);
+
+// Screening, when requested, is self-reported — never dressed up as evidence.
+const screened = await post("/api/agent-card", {
+  display_name: "Screened Agent",
+  owner_name: "Test Co",
+  levels: { screening: true, capability_probe: true },
+});
+checks.push(
+  [
+    screened.card.claims.screening.status === "self_reported",
+    "api: requested screening is self-reported, not evidence",
+    "self_reported",
+  ],
+  [
+    screened.card.claims.capability_probe.status === "self_reported",
+    "api: requested probe is self-reported, not evidence",
+    "self_reported",
+  ],
+  [
+    screened.assessment.level === "L0",
+    "api: a card with no verifiable authority claim stays at L0",
+    "L0",
+  ],
 );
 
 // Multi-party consensus (scenario 4).

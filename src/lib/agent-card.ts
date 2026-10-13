@@ -27,8 +27,17 @@ export const EvidenceSchema = z.object({
   /** Kind of evidence, e.g. "signature" | "domain-challenge" | "probe-result" | "list-check". */
   type: z.string(),
   method: z.string(),
-  /** Who produced it — "self" is not independent. */
-  produced_by: z.enum(["self", "counterparty", "local-module", "third-party"]),
+  /**
+   * Who produced it. A label is NOT a trust anchor — `issuer` carries the
+   * producer's public key, so a receiver checks a signature against a key
+   * rather than trusting a name. Values:
+   *  - "self"      the agent itself (authorship only, not independent execution)
+   *  - "owner"     the human owner, signing with their own key
+   *  - "third-party" an external party with its own key
+   */
+  produced_by: z.enum(["self", "owner", "third-party"]),
+  /** Public key of the producer (base64url). Null when no key attests it. */
+  issuer: z.string().nullable(),
   issued_at: z.string(),
   payload: z.record(z.string(), z.unknown()),
   /** Signature over the evidence payload, base64url. */
@@ -85,10 +94,10 @@ export type AgentCard = z.infer<typeof AgentCardSchema>;
 export type VerificationLevel = "L0" | "L1" | "L2" | "L3";
 
 export const LEVEL_DESCRIPTION: Record<VerificationLevel, string> = {
-  L0: "Key control — the card's signature verifies. Proves this key, nothing more.",
-  L1: "Owner binding — evidence that the claimed owner controls the stated contact. Not company authority.",
-  L2: "Capability self-test — self-produced evidence that the capability runs.",
-  L3: "External screening — checked against a list (synthetic in the demo). Not an identity check.",
+  L0: "Key control — the card signature verifies. Proves this key, nothing more.",
+  L1: "Owner binding — the owner's own key signs a challenge bound to this agent key. Proves control of that key; not a legal identity, not authority to represent an organisation.",
+  L2: "Capability probe — self-reported. The signature proves authorship of the result, not independent execution.",
+  L3: "External screening — self-reported in this demo; no independent authority is involved.",
 };
 
 export interface CardAssessment {

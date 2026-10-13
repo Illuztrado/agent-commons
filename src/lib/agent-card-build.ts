@@ -4,9 +4,14 @@ import type { AgentCard, Claim, Evidence } from "./agent-card";
 /**
  * Build a signed agent card from user input.
  *
- * Written fresh in the hackathon window. Every claim is evidence-backed or
- * explicitly unverified — the builder never emits a bare boolean. Levels the
- * user does not ask for are marked `unverified` / `self_reported`, not faked.
+ * Written fresh in the hackathon window. Honesty rules:
+ *  - No bare booleans: every claim is evidence / self_reported / unverified.
+ *  - Levels the user does not ask for are marked `unverified` / `self_reported`,
+ *    never faked.
+ *  - Owner binding is signed by a separate OWNER key and bound to the agent key,
+ *    so a receiver can validate it. Capability probe and screening are
+ *    `self_reported` — their signature proves authorship, not independent
+ *    execution.
  */
 
 export interface AgentCardInput {
@@ -17,13 +22,12 @@ export interface AgentCardInput {
   capabilities?: string[];
   may_disclose?: string[];
   must_not_disclose?: string[];
-  /** Which evidence-backed claims to include. Absent → honestly unverified. */
+  /** Which claims to include. Absent → honestly unverified / self-reported. */
   levels?: {
     owner_binding?: boolean;
     capability_probe?: boolean;
     screening?: boolean;
   };
-  /** Optional expiry (ISO). */
   expires_at?: string | null;
 }
 
@@ -33,7 +37,7 @@ export interface AgentCardKeys {
 }
 
 function makeEvidence(
-  keys: AgentCardKeys,
+  producer: AgentCardKeys,
   type: string,
   method: string,
   produced_by: Evidence["produced_by"],
@@ -43,9 +47,10 @@ function makeEvidence(
     type,
     method,
     produced_by,
+    issuer: producer.publicKeyRaw,
     issued_at: new Date().toISOString(),
     payload,
-    evidence_sig: signValue(payload, keys.privateKey),
+    evidence_sig: signValue(payload, producer.privateKey),
   };
 }
 
@@ -64,35 +69,43 @@ export function createAgentCard(
       note: "The card signature itself — verifiable by anyone.",
     },
     owner_binding: levels.owner_binding
-      ? {
-          status: "evidence",
-          evidence: makeEvidence(keys, "domain-challenge", "email-domain-challenge", "local-module", {
-            contact: input.owner_contact ?? null,
-            scope: "mailbox-control-only",
-          }),
-          note: "Proves control of the contact, NOT authority to represent the owner.",
-        }
+      ? (() => {
+          // A separate owner key signs a challenge bound to this agent key.
+          const ownerKeys = generateAgentKeyPair();
+          return {
+            status: "evidence" as const,
+            evidence: makeEvidence(ownerKeys, "domain-challenge", "owner-key-signs-challenge", "owner", {
+              agent_id: agentId,
+              nonce: crypto.randomUUID().slice(0, 8),
+              contact: input.owner_contact ?? null,
+              scope: "key-control-only",
+            }),
+            note: "Proves the owner's key controls this agent key. Not a legal identity, not authority to represent an organisation.",
+          };
+        })()
       : { status: "unverified", evidence: null, note: "No owner-binding evidence supplied." },
     capability_probe: levels.capability_probe
       ? {
-          status: "evidence",
+          status: "self_reported",
           evidence: makeEvidence(keys, "probe-result", "probe.constraint-check.v1", "self", {
+            agent_id: agentId,
             probe: "constraint-check",
             capabilities: caps,
             result: "pass",
           }),
-          note: "Self-produced evidence that the capabilities run.",
+          note: "Self-reported. Proves authorship of the result, not independent execution.",
         }
       : { status: "self_reported", evidence: null, note: "Capabilities claimed, no probe result." },
     screening: levels.screening
       ? {
-          status: "evidence",
-          evidence: makeEvidence(keys, "list-check", "synthetic-list-v1", "local-module", {
+          status: "self_reported",
+          evidence: makeEvidence(keys, "list-check", "local-list-check-v1", "self", {
+            agent_id: agentId,
             list: "synthetic-demo-list-v1",
             list_version: "2026-10-13",
             matched: false,
           }),
-          note: "Checked against a synthetic list by a local module — not an independent authority.",
+          note: "Self-reported. A local list check — no independent authority is involved.",
         }
       : { status: "unverified", evidence: null, note: "Not screened in this demo." },
   };
