@@ -78,6 +78,41 @@ checks.push([
 const demo = await get("/demo");
 checks.push([demo.includes("Live negotiation"), "demo: live negotiation page renders", "Live negotiation"]);
 
+// Agent card editor + builder.
+const agentPage = await get("/agent");
+checks.push([
+  agentPage.includes("Agent card editor"),
+  "agent: card editor page renders",
+  "Agent card editor",
+]);
+
+const built = await post("/api/agent-card", {
+  display_name: "Test Agent",
+  owner_name: "Test Co",
+  capabilities: ["negotiate-price"],
+  may_disclose: ["spec"],
+  must_not_disclose: ["walk-away-price"],
+  levels: {},
+});
+checks.push(
+  [
+    built.card.claims.owner_binding.status === "unverified",
+    "api: unevidenced claim is unverified, never a bare boolean",
+    "unverified",
+  ],
+  [
+    built.card.claims.capability_probe.status === "self_reported",
+    "api: capability without a probe is self-reported",
+    "self_reported",
+  ],
+  [
+    typeof built.card.sig === "string" && built.card.sig.length > 0,
+    "api: agent card is signed",
+    "sig",
+  ],
+  [built.assessment.keyAuthenticated === true, "api: agent card key authenticates", "true"],
+);
+
 let failed = 0;
 for (const [ok, label, needle] of checks) {
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}  (${JSON.stringify(needle)})`);
