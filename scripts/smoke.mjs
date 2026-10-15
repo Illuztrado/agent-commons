@@ -231,6 +231,8 @@ checks.push(
     "dashboard: every card exposes independent hash recomputation",
     "Recompute",
   ],
+);
+
 // Human terminal step: a person closes a card that stopped at awaiting_signature.
 // Mutates state (signs off room-northwind) — run against a fresh instance.
 function termsHashOf(html) {
@@ -327,7 +329,8 @@ checks.push(
 );
 
 // Cross-view consistency: a signed-off room leaves the dashboard queue.
-const dashboardAfterSignOff = await get("/dashboard");
+// React SSR separates text interpolations with `<!-- -->` — strip those first.
+const dashboardAfterSignOff = (await get("/dashboard")).replace(/<!-- -->/g, "");
 checks.push([
   dashboardAfterSignOff.includes("2 of 6 rooms"),
   "sign-off: the dashboard queue drops the signed-off room",
