@@ -28,7 +28,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     >
       <body className="min-h-full flex flex-col">
         <nav className="border-b border-neutral-200 dark:border-neutral-800">
-          <div className="mx-auto flex w-full max-w-5xl items-center gap-5 px-6 py-3 text-sm">
+          <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-5 gap-y-2 px-6 py-3 text-sm">
             <Link href="/" className="font-semibold tracking-tight">
               Agent Commons
             </Link>
@@ -37,6 +37,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               className="text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
             >
               Results board
+            </Link>
+            <Link
+              href="/dashboard"
+              className="text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
+            >
+              Dashboard
             </Link>
             <Link
               href="/demo"
