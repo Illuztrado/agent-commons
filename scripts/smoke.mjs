@@ -207,6 +207,31 @@ checks.push([
   "Multi-party consensus",
 ]);
 
+// Human dashboard (P3): funnel, signature queue, recomputable hashes.
+const dashboard = await get("/dashboard");
+checks.push(
+  [
+    dashboard.includes("Negotiation dashboard"),
+    "dashboard: human dashboard renders",
+    "Negotiation dashboard",
+  ],
+  [
+    dashboard.includes("room-northwind") && dashboard.includes("room-weekend"),
+    "dashboard: signature queue lists the pending rooms",
+    "queue rooms",
+  ],
+  [
+    dashboard.includes("awaiting_signature"),
+    "dashboard: queue shows the human-step state",
+    "awaiting_signature",
+  ],
+  [
+    dashboard.includes("Recompute"),
+    "dashboard: every card exposes independent hash recomputation",
+    "Recompute",
+  ],
+);
+
 let failed = 0;
 for (const [ok, label, needle] of checks) {
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}  (${JSON.stringify(needle)})`);
