@@ -1,8 +1,11 @@
 import Link from "next/link";
-import { getTransport, type RoomStatus, type RoomSummary } from "@/lib/transport";
+import { type RoomStatus, type RoomSummary } from "@/lib/transport";
 import { mergeResultCards, type ResultCard } from "@/lib/result-card";
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
+import { getSignOffTransport } from "@/lib/sign-off-transport";
+import { canConfirm, cardStage, type HumanSignOff } from "@/lib/human-signoff";
+import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { HashRecompute } from "@/components/hash-recompute";
+import { SignOffPanel } from "@/components/sign-off-panel";
 import { DATA_PROVENANCE } from "@/lib/scenarios";
 
 /**
@@ -57,9 +60,18 @@ const LANE_LABEL: Record<RoomStatus, string> = {
  */
 const HUMAN_STEPS = new Set(["awaiting_signature", "awaiting_confirmation"]);
 
-function pendingHumanStep(cards: ResultCard[]): string | null {
+/**
+ * The card waiting on a human, with its current stage — sign-off aware, so a
+ * confirmed card leaves the queue. Derived exactly as the room page and the
+ * board derive it, so the views cannot disagree.
+ */
+function pendingHumanCard(
+  cards: ResultCard[],
+  signOffs: HumanSignOff[],
+): { card: ResultCard; stage: string } | null {
   for (const card of cards) {
-    if (card.next_step && HUMAN_STEPS.has(card.next_step)) return card.next_step;
+    const stage = cardStage(card, signOffs);
+    if (stage && HUMAN_STEPS.has(stage)) return { card, stage };
   }
   return null;
 }
@@ -78,18 +90,19 @@ function cardView(card: ResultCard): { tone: "green" | "amber" | "red" | "neutra
 }
 
 export default async function DashboardPage() {
-  const transport = getTransport();
+  const transport = getSignOffTransport();
   const rooms = await transport.listRooms();
+  const signOffs = await transport.listSignOffs();
   const rawCards = await Promise.all(
     rooms.map((room) => transport.listResultCards(room.room_id)),
   );
 
   const entries = rooms.map((room, i) => {
     const cards = mergeResultCards(rawCards[i]);
-    return { room, cards, step: pendingHumanStep(cards) };
+    return { room, cards, pending: pendingHumanCard(cards, signOffs) };
   });
 
-  const queue = entries.filter((e) => e.step !== null);
+  const queue = entries.filter((e) => e.pending !== null);
 
   const lanes = LANES.map((status) => ({
     status,
@@ -126,7 +139,7 @@ export default async function DashboardPage() {
             These rooms have an agent-posted outcome that only a human can sign off.
           </p>
 
-          {queue.map(({ room, step }) => (
+          {queue.map(({ room, pending }) => (
             <div
               key={room.room_id}
               className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800"
@@ -142,20 +155,22 @@ export default async function DashboardPage() {
                   <Badge tone={STATUS_TONE[room.status]}>
                     {statusLabel(room.status, room.required_parties, room.agreed_parties)}
                   </Badge>
-                  <span className="font-mono text-[11px] text-neutral-500">{step}</span>
+                  <span className="font-mono text-[11px] text-neutral-500">{pending?.stage}</span>
                 </div>
                 <p className="text-xs text-neutral-600 dark:text-neutral-400">
                   {room.summary}
                 </p>
               </div>
-              {/* Signature slot: WS-7 wires the real Confirm action onto this row. */}
-              <Button
-                disabled
-                title="Confirmation is wired with the signature flow"
-                className="cursor-not-allowed opacity-50"
-              >
-                Confirm
-              </Button>
+              {pending && canConfirm(pending.card, signOffs) ? (
+                <SignOffPanel room_id={room.room_id} hash={pending.card.hash} />
+              ) : (
+                <Link
+                  href={`/room/${room.room_id}`}
+                  className="text-xs font-medium text-sky-700 hover:underline dark:text-sky-400"
+                >
+                  Review in room →
+                </Link>
+              )}
             </div>
           ))}
 
