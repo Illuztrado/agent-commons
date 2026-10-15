@@ -1,0 +1,171 @@
+"use client";
+
+import * as React from "react";
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
+
+/**
+ * Ask the guide — the panel that makes the Gemini demonstration client
+ * visible on the judge click path. The guide is NOT part of the product
+ * core (the infrastructure contains no agent and no LLM); it exists to
+ * satisfy the hackathon's Gemini requirement, grounded in the live board.
+ *
+ * Honesty rules baked into the UI:
+ * - every answer carries a source badge: "gemini" or "deterministic fallback"
+ * - without an API key the fallback path is shown, never faked
+ */
+
+const SUGGESTED_QUESTIONS = [
+  "What is this product?",
+  "Why is a room partial?",
+  "What are the three states?",
+  "Where does the data come from?",
+];
+
+interface GuideResponse {
+  role: string;
+  answer?: string;
+  source?: "gemini" | "deterministic-fallback";
+  grounded?: string;
+  tool?: string;
+  result?: string;
+}
+
+function SourceBadge({ source }: { source?: string }) {
+  if (source === "gemini") {
+    return <Badge tone="green">gemini</Badge>;
+  }
+  if (source === "deterministic-fallback") {
+    return <Badge tone="amber">deterministic fallback</Badge>;
+  }
+  if (source === "deterministic") {
+    return <Badge tone="amber">deterministic tool</Badge>;
+  }
+  return null;
+}
+
+export function GuidePanel() {
+  const [question, setQuestion] = React.useState("");
+  const [roomId, setRoomId] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [response, setResponse] = React.useState<GuideResponse | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  async function ask(q: string) {
+    const trimmed = q.trim();
+    if (!trimmed || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/guide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: trimmed,
+          room_id: roomId.trim() || undefined,
+        }),
+      });
+      const data = (await res.json()) as GuideResponse;
+      setResponse(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card className="lg:sticky lg:top-6">
+      <CardHeader className="flex-row items-center justify-between">
+        <CardTitle className="text-sm">Ask the guide</CardTitle>
+        <Badge tone="blue">demo client</Badge>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          A demonstration client attached to this product to show a Gemini
+          call in context. It is not part of the product core — the
+          infrastructure itself contains no agent and no LLM.
+        </p>
+
+        <div className="flex flex-wrap gap-1.5">
+          {SUGGESTED_QUESTIONS.map((q) => (
+            <button
+              key={q}
+              type="button"
+              onClick={() => {
+                setQuestion(q);
+                void ask(q);
+              }}
+              disabled={loading}
+              className="rounded-full border border-neutral-200 px-2.5 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-800"
+            >
+              {q}
+            </button>
+          ))}
+        </div>
+
+        <form
+          className="flex flex-col gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void ask(question);
+          }}
+        >
+          <input
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder="Ask about the board, a room, or the product…"
+            className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-950"
+          />
+          <div className="flex items-center gap-2">
+            <input
+              value={roomId}
+              onChange={(e) => setRoomId(e.target.value)}
+              placeholder="room id (optional)"
+              className="min-w-0 flex-1 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-950"
+            />
+            <Button type="submit" disabled={loading || !question.trim()}>
+              {loading ? "Asking…" : "Ask"}
+            </Button>
+          </div>
+        </form>
+
+        {error && (
+          <p className="text-xs text-rose-600 dark:text-rose-400">
+            Request failed: {error}
+          </p>
+        )}
+
+        {response && (
+          <div className="flex flex-col gap-2 border-t border-neutral-100 pt-3 dark:border-neutral-900">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-neutral-500">source</span>
+              <SourceBadge source={response.source} />
+            </div>
+            {response.tool === "verify_terms" && response.result ? (
+              <pre className="whitespace-pre-wrap break-all rounded-lg bg-neutral-50 p-3 font-mono text-xs text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300">
+                {response.result}
+              </pre>
+            ) : (
+              <p className="whitespace-pre-line text-sm text-neutral-800 dark:text-neutral-200">
+                {response.answer}
+              </p>
+            )}
+            {response.grounded && (
+              <details className="text-xs text-neutral-500">
+                <summary className="cursor-pointer">grounded context (live board)</summary>
+                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-neutral-50 p-2 font-mono text-[11px] dark:bg-neutral-900">
+                  {response.grounded}
+                </pre>
+              </details>
+            )}
+          </div>
+        )}
+
+        <p className="text-[11px] leading-relaxed text-neutral-400 dark:text-neutral-500">
+          Without a configured API key the guide answers from a deterministic
+          fallback — labelled as such, never presented as a model call.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
+import { DATA_PROVENANCE } from "@/lib/scenarios";
 
 interface Round {
   round: number;
@@ -70,6 +71,7 @@ export default function DemoPage() {
           the anchor scenario and watch it converge, or force an impasse. The
           trace shows every round and proves no forbidden field went on the wire.
         </p>
+        <p className="text-xs text-neutral-500">{DATA_PROVENANCE}</p>
       </header>
 
       <div className="flex gap-3">

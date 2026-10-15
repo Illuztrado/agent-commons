@@ -72,3 +72,14 @@ export const SCENARIOS: Scenario[] = [
 export function scenarioById(id: string): Scenario | undefined {
   return SCENARIOS.find((s) => s.id === id);
 }
+
+/**
+ * Data provenance, shown on the board and live-demo pages.
+ *
+ * The hackathon requires the demo to explain where its data comes from;
+ * synthetic data that is clearly labelled is explicitly acceptable.
+ */
+export const DATA_PROVENANCE =
+  "Data: synthetic demo dataset, clearly labelled per hackathon rules — " +
+  "no real companies, prices or counterparties. Board rooms are seeded; " +
+  "the live negotiation above runs the real engine on demo inputs.";

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { getTransport, type RoomStatus } from "@/lib/transport";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
-import { SCENARIOS } from "@/lib/scenarios";
+import { GuidePanel } from "@/components/guide-panel";
+import { SCENARIOS, DATA_PROVENANCE } from "@/lib/scenarios";
 
 /**
  * Results board — one row per room.
@@ -53,65 +54,70 @@ export default async function BoardPage() {
         </p>
       </header>
 
-      <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <CardTitle>Rooms</CardTitle>
-          <span className="text-xs text-neutral-500">
-            {rooms.length} rooms · {scenarioCount} scenarios on one engine
-          </span>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-500 dark:border-neutral-800">
-                <th className="py-2 pr-4 font-medium">Room</th>
-                <th className="py-2 pr-4 font-medium">Scenario</th>
-                <th className="py-2 pr-4 font-medium">Parties</th>
-                <th className="py-2 pr-4 font-medium">Status</th>
-                <th className="py-2 pr-4 font-medium">Result</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rooms.map((room) => (
-                <tr
-                  key={room.room_id}
-                  className="border-b border-neutral-100 last:border-0 dark:border-neutral-900"
-                >
-                  <td className="py-3 pr-4 align-top">
-                    <Link
-                      href={`/room/${room.room_id}`}
-                      className="font-medium text-sky-700 hover:underline dark:text-sky-400"
-                    >
-                      {room.room_id}
-                    </Link>
-                  </td>
-                  <td className="py-3 pr-4 align-top text-neutral-600 dark:text-neutral-400">
-                    {room.scenario}
-                  </td>
-                  <td className="py-3 pr-4 align-top text-neutral-600 dark:text-neutral-400">
-                    {room.participants.length}
-                  </td>
-                  <td className="py-3 pr-4 align-top">
-                    <Badge tone={STATUS_TONE[room.status]}>
-                      {statusLabel(room.status, room.required_parties, room.agreed_parties)}
-                    </Badge>
-                  </td>
-                  <td className="py-3 pr-4 align-top text-neutral-700 dark:text-neutral-300">
-                    {room.summary}
-                  </td>
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+        <Card className="min-w-0 flex-1">
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>Rooms</CardTitle>
+            <span className="text-xs text-neutral-500">
+              {rooms.length} rooms · {scenarioCount} scenarios on one engine
+            </span>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-500 dark:border-neutral-800">
+                  <th className="py-2 pr-4 font-medium">Room</th>
+                  <th className="py-2 pr-4 font-medium">Scenario</th>
+                  <th className="py-2 pr-4 font-medium">Parties</th>
+                  <th className="py-2 pr-4 font-medium">Status</th>
+                  <th className="py-2 pr-4 font-medium">Result</th>
                 </tr>
-              ))}
-              {rooms.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="py-6 text-center text-neutral-500">
-                    No rooms yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
+              </thead>
+              <tbody>
+                {rooms.map((room) => (
+                  <tr
+                    key={room.room_id}
+                    className="border-b border-neutral-100 last:border-0 dark:border-neutral-900"
+                  >
+                    <td className="py-3 pr-4 align-top">
+                      <Link
+                        href={`/room/${room.room_id}`}
+                        className="font-medium text-sky-700 hover:underline dark:text-sky-400"
+                      >
+                        {room.room_id}
+                      </Link>
+                    </td>
+                    <td className="py-3 pr-4 align-top text-neutral-600 dark:text-neutral-400">
+                      {room.scenario}
+                    </td>
+                    <td className="py-3 pr-4 align-top text-neutral-600 dark:text-neutral-400">
+                      {room.participants.length}
+                    </td>
+                    <td className="py-3 pr-4 align-top">
+                      <Badge tone={STATUS_TONE[room.status]}>
+                        {statusLabel(room.status, room.required_parties, room.agreed_parties)}
+                      </Badge>
+                    </td>
+                    <td className="py-3 pr-4 align-top text-neutral-700 dark:text-neutral-300">
+                      {room.summary}
+                    </td>
+                  </tr>
+                ))}
+                {rooms.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="py-6 text-center text-neutral-500">
+                      No rooms yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+        <div className="w-full shrink-0 lg:w-80">
+          <GuidePanel />
+        </div>
+      </div>
 
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
@@ -132,10 +138,13 @@ export default async function BoardPage() {
         </div>
       </section>
 
-      <footer className="text-xs text-neutral-500">
-        Result hashes are recomputable by any party from the terms alone.
-        Verification badges describe what each level actually is — no real-world
-        identity is claimed.
+      <footer className="flex flex-col gap-1 text-xs text-neutral-500">
+        <span>
+          Result hashes are recomputable by any party from the terms alone.
+          Verification badges describe what each level actually is — no real-world
+          identity is claimed.
+        </span>
+        <span>{DATA_PROVENANCE}</span>
       </footer>
     </main>
   );
