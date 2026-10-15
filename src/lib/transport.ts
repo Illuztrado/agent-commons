@@ -115,9 +115,8 @@ export class DemoTransport implements Transport {
   }
 }
 
-let singleton: Transport | null = null;
-
-export function getTransport(): Transport {
-  if (!singleton) singleton = new DemoTransport();
-  return singleton;
-}
+/**
+ * Which transport a page gets is decided in `./transport-factory` (env switch),
+ * not here — this file stays the boundary definition plus the demo behaviour
+ * that every other view falls back to.
+ */

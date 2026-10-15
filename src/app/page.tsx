@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { type RoomStatus } from "@/lib/transport";
+import { getTransport } from "@/lib/transport-factory";
 import { getSignOffTransport, roomStage } from "@/lib/sign-off-transport";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { GuidePanel } from "@/components/guide-panel";
@@ -13,12 +14,12 @@ import { SCENARIOS, DATA_PROVENANCE } from "@/lib/scenarios";
  * A row also carries the terminal human step — whether that result is still
  * awaiting a signature or has been signed off — read from the same transport
  * the room page writes to.
- */
-
-/**
- * Rooms and sign-offs are live transport state, so the board renders per
- * request: prerendered HTML would freeze the board at build time and a
- * confirmation would never reach it.
+ *
+ * In Firestore mode the board is live state, so it must render per request —
+ * a prerendered board would freeze whatever rooms happened to exist at build
+ * time, and would need Firestore credentials during the image build. The demo
+ * seed is in memory, so re-rendering it costs nothing. `dynamic` has to be a
+ * literal for Next to accept it, so both modes render fresh.
  */
 export const dynamic = "force-dynamic";
 

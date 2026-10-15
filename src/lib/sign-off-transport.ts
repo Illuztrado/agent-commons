@@ -1,5 +1,9 @@
 import { mergeResultCards, type ResultCard } from "./result-card";
-import { getTransport, roomStatusFromCards, type RoomSummary, type Transport } from "./transport";
+import { roomStatusFromCards, type RoomSummary, type Transport } from "./transport";
+// The transport a view gets is decided in one place (env switch), so the
+// sign-off wrapper wraps whatever that place selected rather than assuming the
+// demo transport.
+import { getTransport } from "./transport-factory";
 import {
   buildSignOff,
   cardStage,

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getTransport, type RoomSummary } from "@/lib/transport";
+import { getTransport } from "@/lib/transport-factory";
+import type { RoomSummary } from "@/lib/transport";
 import { termsHash } from "@/lib/canonical";
 import { hasGeminiKey, generateText } from "@/lib/gemini";
 
