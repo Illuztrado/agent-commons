@@ -1,0 +1,174 @@
+import { NextResponse } from "next/server";
+import { getTransport, type RoomSummary } from "@/lib/transport";
+import { termsHash } from "@/lib/canonical";
+import { hasGeminiKey, generateText } from "@/lib/gemini";
+
+/**
+ * POST /api/guide
+ *
+ * The guide agent — a DEMONSTRATION CLIENT attached to the product to satisfy
+ * the hackathon's Gemini-usage requirement. It is explicitly NOT part of the
+ * product core: the infrastructure (this app) contains no agent and no LLM.
+ *
+ * The agent is grounded in the real data layer: it reads the live board
+ * (rooms + result cards) and answers questions about it. Tools it uses:
+ *   - list_rooms()            -> board state (status per room)
+ *   - explain_card(room_id)   -> the result cards behind a room
+ *   - verify_terms(terms)     -> recompute the hash from terms alone
+ *
+ * If GEMINI_API_KEY is absent (BYOK), it falls back to deterministic answers
+ * so the demo never breaks — and the fallback is always labelled.
+ */
+
+const PRODUCT_ONE_LINER =
+  "Agent Commons is a thin, stateless layer between agents owned by different parties " +
+  "that turns their negotiation into a verifiable result: a typed result card with a " +
+  "hash either side can recompute.";
+
+const WHAT_IT_DOES_NOT_DO = [
+  "no payments, escrow or settlement",
+  "no legal signature validity",
+  "no real-world identity verification",
+  "no agent framework or orchestration — agents run on each party's own stack",
+  "no conversation storage — the board shows outcomes only",
+].join("; ");
+
+const THREE_STATES =
+  "Every claim on a card carries one of three states, never a bare boolean: " +
+  "evidence (an issuer key is attached and anyone can check it), " +
+  "self_reported (honestly labelled — a signed self-test proves authorship, not independent execution), " +
+  "or unverified (no claim is made).";
+
+interface Grounding {
+  rooms: RoomSummary[];
+  focusRoom?: RoomSummary;
+  focusCards?: unknown[];
+}
+
+async function ground(question: string, roomId?: string): Promise<Grounding> {
+  const transport = getTransport();
+  const rooms = await transport.listRooms();
+  // Pick a focus room: explicit room_id, else a room id mentioned in the question.
+  const mentioned = rooms.find((r) => question.toLowerCase().includes(r.room_id));
+  const focus = roomId
+    ? rooms.find((r) => r.room_id === roomId) ?? mentioned
+    : mentioned;
+  const focusCards = focus ? await transport.listResultCards(focus.room_id) : undefined;
+  return { rooms, focusRoom: focus, focusCards };
+}
+
+function compactContext(g: Grounding): string {
+  const lines = g.rooms.map(
+    (r) => `${r.room_id} [${r.status}${r.status === "partial" ? ` ${r.agreed_parties}/${r.required_parties}` : ""}] ${r.scenario}: ${r.summary}`,
+  );
+  if (g.focusCards && g.focusRoom) {
+    lines.push(
+      `focus room ${g.focusRoom.room_id} cards: ` +
+        JSON.stringify(g.focusCards.map((c) => {
+          const card = c as { status?: string; hash?: string; agreement?: string; terms?: unknown };
+          return { status: card.status, agreement: card.agreement, hash: card.hash, terms: card.terms };
+        })),
+    );
+  }
+  return lines.join("\n");
+}
+
+function deterministicAnswer(question: string, g: Grounding): string | null {
+  const q = question.toLowerCase();
+  if (/(what|who).*(this|product|agent commons|app|platform)|what does (this|it) do/.test(q)) {
+    return `${PRODUCT_ONE_LINER}\nIt does NOT do: ${WHAT_IT_DOES_NOT_DO}.`;
+  }
+  if (/(partial|not agreed|why.*agreed|2\/3|1\/3|consensus)/.test(q)) {
+    const partials = g.rooms.filter((r) => r.status === "partial");
+    return (
+      `A room shows agreed only when every required party has posted an agreed card over the same hash. ` +
+      `Until then it stays partial — a first-class state, never quietly upgraded. ` +
+      (partials.length > 0
+        ? `Partial rooms on the board right now: ${partials.map((r) => `${r.room_id} (${r.agreed_parties}/${r.required_parties})`).join(", ")}.`
+        : `There are no partial rooms on the board right now.`)
+    );
+  }
+  if (/(three states|evidence|self.?reported|unverified|badge|claim)/.test(q)) {
+    return THREE_STATES;
+  }
+  if (/(verify|recompute|hash|check|trust)/.test(q)) {
+    return (
+      `Verification needs no trust in us: the card's hash is a sha256 over the canonical JSON of its terms, ` +
+      `so either side recomputes it from the terms alone. Ask me "verify terms" with a room id and I will ` +
+      `recompute and show whether it matches the card on record.`
+    );
+  }
+  if (/(card|build|sign|agent card|editor)/.test(q)) {
+    return (
+      `To build an agent card: open /agent, set display name, owner, disclosure policy (what this agent may ` +
+      `and must not disclose), then Build & sign. The assessment panel re-reads your card and marks each ` +
+      `claim evidence / self_reported / unverified. A card cannot fake a backing it does not have.`
+    );
+  }
+  if (/(data|where.*from|real|synthetic|seed)/.test(q)) {
+    return (
+      `Board data comes from the product's data layer (Firestore once deployed; seeded demo rooms until then). ` +
+      `Every card carries its terms, hash, and the parties that signed it — nothing is stored as opaque transcript.`
+    );
+  }
+  return null;
+}
+
+function verifyTermsTool(terms: Record<string, unknown>): string {
+  const hash = termsHash(terms);
+  return `Recomputed hash from terms alone: ${hash}`;
+}
+
+export async function POST(request: Request) {
+  let body: Record<string, unknown> = {};
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    body = {};
+  }
+  const question = typeof body.question === "string" && body.question.trim() ? body.question.trim() : "What is this product?";
+  const roomId = typeof body.room_id === "string" ? body.room_id : undefined;
+
+  // A caller may pass raw terms to run the verify tool directly.
+  if (body.terms && typeof body.terms === "object") {
+    return NextResponse.json({
+      role: "demo-assistant",
+      tool: "verify_terms",
+      result: verifyTermsTool(body.terms as Record<string, unknown>),
+      source: "deterministic",
+    });
+  }
+
+  const g = await ground(question, roomId);
+  const fallback = deterministicAnswer(question, g);
+
+  if (!hasGeminiKey()) {
+    return NextResponse.json({
+      role: "demo-assistant",
+      answer: fallback ?? `${PRODUCT_ONE_LINER}\n(Gemini key not configured — this is the deterministic fallback path.)`,
+      source: "deterministic-fallback",
+      grounded: compactContext(g),
+    });
+  }
+
+  const systemInstruction =
+    `You are the Agent Commons guide — a demonstration client attached to satisfy the hackathon's ` +
+    `Gemini requirement. You are NOT part of the product core. Answer questions using ONLY the board ` +
+    `context below (live rooms and cards). Be concise, concrete, and honest — if the context does not ` +
+    `contain the answer, say so. Never invent rooms, cards or hashes.\n\n` +
+    `Product facts you may state:\n- ${PRODUCT_ONE_LINER}\n- It does NOT do: ${WHAT_IT_DOES_NOT_DO}.\n- ${THREE_STATES}\n\n` +
+    `Live board context:\n${compactContext(g)}`;
+
+  try {
+    const answer = await generateText(question, { systemInstruction, temperature: 0.3 });
+    return NextResponse.json({ role: "demo-assistant", answer, source: "gemini", grounded: compactContext(g) });
+  } catch (e) {
+    // Key present but the call failed — degrade honestly, never fabricate.
+    return NextResponse.json({
+      role: "demo-assistant",
+      answer: `${fallback ?? "The guide is unavailable right now."} (Gemini call failed: ${e instanceof Error ? e.message : String(e)} — showing the deterministic fallback.)`,
+      source: "deterministic-fallback",
+      grounded: compactContext(g),
+    });
+  }
+}
