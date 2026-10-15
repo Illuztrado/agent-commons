@@ -9,9 +9,9 @@ import { SEED_CARDS } from "./seed";
  * the room layer only needs `listRooms` / `listResultCards` / `send`.
  *
  * D1 (skeleton): the DemoTransport below seeds the anchor story so the board
- * renders end to end. The real Muse Relay bridge (reusing our own MIT
- * `muse-relay/relay.py` — E2EE + Ed25519 member certs) lands in D2 behind the
- * same interface; nothing above this file changes.
+ * renders end to end. No external transport code is vendored into this repo —
+ * a real bridge, if ever needed, would be written fresh inside the hackathon
+ * window; nothing above this file changes.
  */
 
 export type RoomStatus =
