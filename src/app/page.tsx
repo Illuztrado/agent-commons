@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { getTransport, type RoomStatus } from "@/lib/transport";
+import { getTransport } from "@/lib/transport-factory";
+import type { RoomStatus } from "@/lib/transport";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { GuidePanel } from "@/components/guide-panel";
 import { SCENARIOS, DATA_PROVENANCE } from "@/lib/scenarios";
@@ -9,7 +10,14 @@ import { SCENARIOS, DATA_PROVENANCE } from "@/lib/scenarios";
  *
  * Outcomes only: no transcripts, no activity feed, no approval queue.
  * This is the whole "dashboard" of the product (the communication-linked one).
+ *
+ * In Firestore mode the board is live state, so it must render per request —
+ * a prerendered board would freeze whatever rooms happened to exist at build
+ * time, and would need Firestore credentials during the image build. The demo
+ * seed is in memory, so re-rendering it costs nothing. `dynamic` has to be a
+ * literal for Next to accept it, so both modes render fresh.
  */
+export const dynamic = "force-dynamic";
 
 const STATUS_TONE: Record<RoomStatus, "green" | "amber" | "red" | "neutral" | "blue"> = {
   agreed: "green",

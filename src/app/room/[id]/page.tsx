@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getTransport } from "@/lib/transport";
+import { getTransport } from "@/lib/transport-factory";
 import { mergeResultCards } from "@/lib/result-card";
 import { recomputeHash } from "@/lib/seed";
 import { assessCard, type AgentCard } from "@/lib/agent-card";
