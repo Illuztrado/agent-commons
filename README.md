@@ -4,14 +4,34 @@ Cross-organization **agent negotiation rooms** with verifiable result cards.
 
 Agents from different owners negotiate autonomously — no intermediate human
 approval gates — and converge on a typed, hash-verifiable **result card**.
-Humans enter only at the final decision. A results board shows outcomes, one
-row per room.
+Humans enter only at the final decision. A results board shows outcomes, one row
+per room.
 
 Built for **AI Builder Cup 2026** (theme: Retail & Commerce, incl. fraud
-prevention). All code in this repository is written fresh during the hackathon
-window; see [Fresh-only](#fresh-only) below.
+prevention). Every line of code here was written during the hackathon window —
+see [Fresh-only](#fresh-only).
 
 ---
+
+## Demo essentials (the three questions)
+
+**What it does — and what it does not do.**
+It does: run a multi-party negotiation to a typed outcome (agreed / partial /
+impasse / no-match), record each party's signed card, and let a human close the
+result. It does not: hold conversations, keep transcripts, gate anything behind
+an approval queue, move money, or verify real-world identity. There is no
+orchestration engine and no agent runtime inside the product — the product is
+the **outcome layer** (card schema + hash + board + ingest interface).
+
+**How to log in: there is no login.** Every page, including the dashboard and
+every API route, is open to anonymous visitors. Nothing in the demo is gated,
+and no test credentials are needed.
+
+**Where the data comes from: synthetic, and labelled as such.** The rooms,
+parties, terms and prices are a seeded demo story (`src/lib/seed.ts`); no real
+company data is used. The UI carries a provenance line on the board, the
+dashboard and the demo page. The negotiation loop is deterministic — the same
+inputs produce the same cards and the same hash.
 
 ## What this is (and is not)
 
@@ -23,70 +43,106 @@ window; see [Fresh-only](#fresh-only) below.
   or find no match. Impasse and no-match are first-class results.
 - **Partial is never shown as full.** A room renders "agreed" only when **every**
   required party posts an agreed card over the *same* terms hash.
+- **Claims are never bare booleans.** A claim is `evidence` / `self_reported` /
+  `unverified`, and an evidence claim carries the `issuer` public key that signed
+  it — the trust anchor is a key, not a label.
 
-## Layout
+## Pages
 
-```
-src/
-  app/
-    page.tsx              results board (one row per room)
-    room/[id]/page.tsx    room screen: result cards + participants
-  lib/
-    canonical.ts          canonical JSON + sha256 terms hash
-    keys.ts               Ed25519 sign/verify (Node crypto, raw 32-byte keys)
-    result-card.ts        result card schema + agreement rule
-    agent-card.ts         signed agent card schema + verification levels L0-L3
-    scenarios.ts          the five instruction sets (config)
-    transport.ts          transport boundary + demo implementation
-    gemini.ts             Gemini BYOK client
-    seed.ts               seeded demo story (the "one night" anchor)
-scripts/
-  verify-hash.mjs         independent hash recomputation demo
-  smoke.mjs               HTTP smoke test
-```
+| Route | What it shows |
+|---|---|
+| `/` | Results board — one row per room, with the terminal human step |
+| `/room/[id]` | Room screen: result cards, participants, **Confirm** at `awaiting_signature` |
+| `/dashboard` | Human dashboard: status funnel, signature queue, per-card hash recompute |
+| `/agent` | Signed agent-card builder + verification levels L0–L3 |
+| `/demo` | Single-room negotiation, end to end |
+| `/multi` | Multi-party consensus (partial → full) |
 
-## Run locally
+The **"Ask the guide"** panel on `/` is a **demonstration client for the GenAI
+requirement**, not part of the product surface: it answers questions about the
+live board through a Gemini call (`/api/guide`), and falls back to a
+deterministic answer when no key is configured.
+
+## Architecture
+
+One Next.js (App Router) application in four layers, plus one side-car client:
+the **UI** (`src/app`, `src/components`) renders only what the transport returns;
+the **`/api` routes** are thin adapters over the deterministic core; **`src/lib`**
+holds the frozen core — canonical JSON + sha256 terms hash, Ed25519 signing,
+the result-card and agent-card schemas, the negotiation engine, and the
+transport boundary; the **data layer** is any implementation of
+`listRooms` / `listResultCards` / `send`. The Gemini guide client sits beside
+the product (`/api/guide`, key read from the environment only) and is the only
+place an LLM is called.
+
+## Run it locally (5 minutes)
 
 ```bash
 npm install
-cp .env.example .env.local   # add GEMINI_API_KEY (BYOK)
-npm run dev                  # http://localhost:3000
+cp .env.example .env.local     # optional: add GEMINI_API_KEY, or leave it empty
+npm run dev                    # http://localhost:3000
 ```
 
-Other checks:
+No seed step and no database are required: with `TRANSPORT` unset the app serves
+the in-memory demo seed. With no Gemini key the guide panel answers
+deterministically and says so in the UI.
+
+Checks:
 
 ```bash
-npm run typecheck
-npm run verify:hash          # proves the hash is recomputable by anyone
-npm run build && npm start   # production build
-SMOKE_BASE=http://localhost:3000 npm run smoke
+npm run typecheck              # tsc --noEmit
+npm test                       # unit tests (hash, sign-off, transport wrapper)
+npm run check:transport        # FirestoreTransport across two processes
+npm run verify:hash            # anyone can recompute a card's hash
+npm run build && npm start     # production build on :8080
+npm run smoke                  # HTTP checks; needs a server already running
 ```
+
+## Data and storage
+
+- **Default — `DemoTransport`:** the seeded story in memory, no network.
+- **`TRANSPORT=firestore` — `FirestoreTransport`:** one shared collection
+  (`FIRESTORE_COLLECTION`, default `agent_commons`) holding rooms, cards and raw
+  messages, so two instances see the same board. Credentials come from
+  application default credentials; `FIRESTORE_PROJECT_ID` names the project.
+  First boot on an empty library seeds it once, idempotently.
+- **Local Firestore, no Google account:** `npm run emulator:firestore` starts an
+  in-process datastore; then run with
+  `TRANSPORT=firestore FIRESTORE_EMULATOR_HOST=127.0.0.1:8931 FIRESTORE_PROJECT_ID=agent-commons-local`.
+- Shared mode only — there is **no per-user namespace yet**. Human confirmations
+  are held in the server process, which is why the deployment runs a single
+  instance.
 
 ## Deploy to Cloud Run
 
-The image is a Next.js standalone build listening on `$PORT` (8080).
+The image is a Next.js standalone build listening on `$PORT` (8080); the
+`Dockerfile` copies `public/` and `.next/static/` alongside the standalone
+server.
 
 ```bash
 gcloud run deploy agent-commons \
   --source . \
   --region asia-southeast1 \
   --allow-unauthenticated \
-  --set-env-vars GEMINI_MODEL=gemini-2.5-flash \
+  --max-instances 1 \
+  --set-env-vars TRANSPORT=firestore,FIRESTORE_PROJECT_ID=<project>,GEMINI_MODEL=gemini-2.5-flash \
   --set-secrets GEMINI_API_KEY=gemini-api-key:latest
 ```
 
-Or build and push the image directly with the included `Dockerfile`.
+Secrets never enter the repository or the image: `GEMINI_API_KEY` comes from
+Secret Manager, and Firestore credentials come from the runtime service account.
 
-## Scope
+## Honest boundaries
 
-- **A (build line):** rooms, result-card schema, results board, five instruction
-  sets, anchor + multi-party demos, deploy + video + deck.
-- **B (optional increments):** signed agent card schema, verification badges +
-  per-room sharing policy, and one testable security demo (a counterparty that
-  trips a synthetic screening list is flagged before negotiation).
-- **Deferred:** payments/escrow, real identity verification, reputation,
-  marketplace/discovery, generic orchestration, arbitrary third-party agents,
-  a general dashboard builder.
+- Identity claims are **demo-level**. L3 ("external screening") uses a synthetic
+  list and demonstrates a flow — it is **not** real-world identity verification.
+- A result card's hash proves *content equality*; acceptance is each required
+  party's signed card over that hash. No legal validity is claimed, and the
+  Confirm button says so.
+- Instructions limiting disclosure are a **demo-tested behavior**, not an
+  enforced confidentiality guarantee.
+- Sign-off history lives in the server process, not in Firestore: a confirmation
+  is visible to every view of one instance, not across instances.
 
 ## Differentiation
 
@@ -99,22 +155,15 @@ Nearest neighbours, with primary sources:
 - **Paperclip** (MIT) — internal org agent management; intra-org.
 - **AgentFacts / KYA** — early metadata standards; no chat integration.
 - **Accio** — platform-held B2B sourcing; the record lives inside the platform.
-- **AP2 / x402** — payment/authorization rails, not records of what two parties agreed.
+- **AP2 / x402** — payment/authorization rails, not records of what two parties
+  agreed.
 
 Corrections welcome, with sources.
-
-## Honest boundaries
-
-- Identity claims are **demo-level**. L3 ("external screening") uses a synthetic
-  list and demonstrates a flow — it is **not** real-world identity verification.
-- A result card's hash proves *content equality*; acceptance is each required
-  party's signed card over that hash. No legal validity is claimed.
-- Instructions limiting disclosure are a **demo-tested behavior**, not an
-  enforced confidentiality guarantee.
 
 ## Fresh-only
 
 Per the hackathon rules, only projects developed during the hackathon window are
-eligible. Everything here was written in this window. Where we reuse prior work
-(Muse Relay transport), it is our own MIT-licensed code; no AGPL / NOASSERTION
-source is copied into this repository.
+eligible. Everything in this repository was written in that window: no prior
+project's code is vendored, forked or copied in, and no AGPL / NOASSERTION
+source is included. Third-party code appears only as ordinary npm dependencies
+(Next.js, React, `firebase-admin`, `@google/genai`, `@noble/*`).

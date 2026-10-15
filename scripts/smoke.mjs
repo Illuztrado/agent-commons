@@ -268,6 +268,14 @@ checks.push(
     "sign-off: the room has not been closed yet",
     "awaiting_signature",
   ],
+  // A judge may have JavaScript disabled. The Confirm affordance is a server
+  // action on a plain <form>, so React renders it with a POST target and a
+  // hidden action id — the click then works without hydration.
+  [
+    /<form[^>]*method="POST"/.test(open) && /\$ACTION_ID_[0-9a-f]+/.test(open),
+    "sign-off: Confirm works with JavaScript disabled (server action, no hydration)",
+    "$ACTION_ID + method=POST",
+  ],
 );
 
 const confirmed = await postStatus("/api/sign-off", {
