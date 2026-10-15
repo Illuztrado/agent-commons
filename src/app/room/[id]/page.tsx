@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getTransport } from "@/lib/transport";
+import { getSignOffTransport } from "@/lib/sign-off-transport";
 import { mergeResultCards } from "@/lib/result-card";
+import { canConfirm, cardStage, findSignOff } from "@/lib/human-signoff";
 import { recomputeHash } from "@/lib/seed";
 import { assessCard, type AgentCard } from "@/lib/agent-card";
 import {
@@ -12,6 +13,7 @@ import {
   verifyEvidence,
 } from "@/lib/agent-card-demo";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
+import { SignOffPanel } from "@/components/sign-off-panel";
 
 /**
  * Room page — the core screen.
@@ -40,13 +42,16 @@ export default async function RoomPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const transport = getTransport();
+  const transport = getSignOffTransport();
   const rooms = await transport.listRooms();
   const room = rooms.find((r) => r.room_id === id);
   if (!room) notFound();
 
   const cards = await transport.listResultCards(id);
   const merged = mergeResultCards(cards);
+  // Read from the transport, never from a copy kept on the page: the board and
+  // the next page load have to agree with what this page shows.
+  const signOffs = await transport.listSignOffs();
 
   const agentCards = cardsForRoom(id).map((card) => {
     const assessment = assessCard(card, verifyCard(card));
@@ -94,6 +99,8 @@ export default async function RoomPage({
           {merged.map((card) => {
             const recomputed = recomputeHash(card);
             const hashOk = recomputed === card.hash;
+            const stage = cardStage(card, signOffs);
+            const signOff = findSignOff(signOffs, card);
             return (
               <Card key={card.hash + card.author}>
                 <CardHeader className="flex-row items-center justify-between">
@@ -124,8 +131,27 @@ export default async function RoomPage({
                       {card.hash}
                     </code>
                   </div>
-                  <div className="text-xs text-neutral-500">
-                    next step: {card.next_step ?? "none"}
+                  <div className="flex flex-col gap-2">
+                    <div className="text-xs text-neutral-500">
+                      next step: {stage ?? "none"}
+                      {signOff && (
+                        <Badge tone="green" className="ml-2">
+                          signed off
+                        </Badge>
+                      )}
+                    </div>
+                    {signOff ? (
+                      <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                        Confirmed by{" "}
+                        <span className="font-medium">{signOff.display_name}</span> at{" "}
+                        <span className="font-mono">{signOff.signed_off_at}</span>. Demo-level
+                        confirmation of these terms — no legal signature validity.
+                      </p>
+                    ) : (
+                      canConfirm(card, signOffs) && (
+                        <SignOffPanel room_id={card.room_id} hash={card.hash} />
+                      )
+                    )}
                   </div>
                 </CardContent>
               </Card>

@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test '.tmp-tests/tests/**/*.test.js'",
     "verify:hash": "node scripts/verify-hash.mjs",
     "smoke": "node scripts/smoke.mjs"
   },

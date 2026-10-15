@@ -3,6 +3,8 @@ import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
 const eslintConfig = defineConfig([
+  // Compiled test output (`npm test` emits here) is generated, not source.
+  { ignores: [".tmp-tests/**"] },
   ...nextVitals,
   ...nextTs,
   // Override default ignores of eslint-config-next.

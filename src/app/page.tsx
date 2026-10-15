@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { getTransport, type RoomStatus } from "@/lib/transport";
+import { type RoomStatus } from "@/lib/transport";
+import { getSignOffTransport, roomStage } from "@/lib/sign-off-transport";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { GuidePanel } from "@/components/guide-panel";
 import { SCENARIOS, DATA_PROVENANCE } from "@/lib/scenarios";
@@ -9,7 +10,17 @@ import { SCENARIOS, DATA_PROVENANCE } from "@/lib/scenarios";
  *
  * Outcomes only: no transcripts, no activity feed, no approval queue.
  * This is the whole "dashboard" of the product (the communication-linked one).
+ * A row also carries the terminal human step — whether that result is still
+ * awaiting a signature or has been signed off — read from the same transport
+ * the room page writes to.
  */
+
+/**
+ * Rooms and sign-offs are live transport state, so the board renders per
+ * request: prerendered HTML would freeze the board at build time and a
+ * confirmation would never reach it.
+ */
+export const dynamic = "force-dynamic";
 
 const STATUS_TONE: Record<RoomStatus, "green" | "amber" | "red" | "neutral" | "blue"> = {
   agreed: "green",
@@ -35,9 +46,18 @@ function statusLabel(status: RoomStatus, required: number, agreed: number): stri
 }
 
 export default async function BoardPage() {
-  const transport = getTransport();
+  const transport = getSignOffTransport();
   const rooms = await transport.listRooms();
+  const signOffs = await transport.listSignOffs();
   const scenarioCount = SCENARIOS.length;
+
+  // Derived per row from the cards the room actually rolled up to — the same
+  // derivation the room page uses, so the two views cannot disagree.
+  const stageByRoom = new Map<string, string | null>();
+  for (const room of rooms) {
+    const cards = await transport.listResultCards(room.room_id);
+    stageByRoom.set(room.room_id, roomStage(cards, signOffs));
+  }
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-6 py-12">
@@ -97,6 +117,16 @@ export default async function BoardPage() {
                       <Badge tone={STATUS_TONE[room.status]}>
                         {statusLabel(room.status, room.required_parties, room.agreed_parties)}
                       </Badge>
+                      {stageByRoom.get(room.room_id) === "awaiting_signature" && (
+                        <Badge tone="blue" className="ml-2">
+                          awaiting signature
+                        </Badge>
+                      )}
+                      {stageByRoom.get(room.room_id) === "signed_off" && (
+                        <Badge tone="green" className="ml-2">
+                          signed off
+                        </Badge>
+                      )}
                     </td>
                     <td className="py-3 pr-4 align-top text-neutral-700 dark:text-neutral-300">
                       {room.summary}

@@ -207,6 +207,102 @@ checks.push([
   "Multi-party consensus",
 ]);
 
+// Human terminal step: a person closes a card that stopped at awaiting_signature.
+// The affordance is checked on room-northwind, which this script never confirms,
+// so a second run against the same instance stays meaningful.
+function termsHashOf(html) {
+  const match = html.match(/terms hash<\/span>[\s\S]{0,300}?(sha256:[0-9a-f]{64})/);
+  if (!match) throw new Error("could not read a terms hash from the room page");
+  return match[1];
+}
+
+async function postStatus(path, body) {
+  const res = await fetch(base + path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, json: await res.json().catch(() => ({})) };
+}
+
+const open = await get("/room/room-northwind");
+const openHash = termsHashOf(open);
+checks.push(
+  [
+    open.includes("Confirming as") && open.includes(">Confirm<"),
+    "sign-off: a card at awaiting_signature offers the human a Confirm button",
+    "Confirm",
+  ],
+  [
+    open.includes("no legal signature validity"),
+    "sign-off: the affordance claims no legal signature validity",
+    "no legal signature validity",
+  ],
+  [
+    open.includes("next step:") && !open.includes("signed_off"),
+    "sign-off: the room has not been closed yet",
+    "awaiting_signature",
+  ],
+);
+
+const confirmed = await postStatus("/api/sign-off", {
+  room_id: "room-northwind",
+  hash: openHash,
+  display_name: "Judge",
+});
+checks.push(
+  [
+    confirmed.status === 200 &&
+      confirmed.json.sign_off?.display_name === "Judge" &&
+      typeof confirmed.json.sign_off?.signed_off_at === "string",
+    "sign-off: confirming records who and when",
+    "{ display_name, signed_off_at }",
+  ],
+);
+
+const closed = await get("/room/room-northwind");
+checks.push(
+  [closed.includes("signed_off"), "sign-off: the card moves to signed_off", "signed_off"],
+  [closed.includes("signed off"), "sign-off: the card is badged as signed off", "signed off"],
+  [
+    closed.includes("Confirmed by") && closed.includes("Judge"),
+    "sign-off: the page shows who confirmed it",
+    "Confirmed by Judge",
+  ],
+  [!closed.includes("Confirming as"), "sign-off: a closed card offers no second Confirm", "gone"],
+);
+
+const boardAfter = await get("/");
+checks.push(
+  [boardAfter.includes("signed off"), "sign-off: the board row picks the state up from the transport", "signed off"],
+  [boardAfter.includes("partial 1/2"), "sign-off: a human confirm never inflates agent agreement", "partial 1/2"],
+);
+
+const twice = await postStatus("/api/sign-off", { room_id: "room-northwind", hash: openHash });
+checks.push([twice.status === 409, "sign-off: the same card cannot be confirmed twice", "409"]);
+
+const invented = await postStatus("/api/sign-off", {
+  room_id: "room-northwind",
+  hash: `sha256:${"0".repeat(64)}`,
+});
+checks.push([
+  invented.status === 409,
+  "sign-off: a hash with no card on the board is refused",
+  "409",
+]);
+
+const held = await get("/room/room-orion");
+const heldHash = termsHashOf(held);
+const noHumanStep = await postStatus("/api/sign-off", { room_id: "room-orion", hash: heldHash });
+checks.push(
+  [!held.includes("Confirming as"), "sign-off: an impasse card offers no Confirm button", "no affordance"],
+  [
+    noHumanStep.status === 409,
+    "sign-off: a card that never reached the human step cannot be closed",
+    "409",
+  ],
+);
+
 let failed = 0;
 for (const [ok, label, needle] of checks) {
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}  (${JSON.stringify(needle)})`);
