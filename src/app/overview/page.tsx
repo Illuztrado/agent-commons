@@ -1,18 +1,14 @@
-import Link from "next/link";
 import { listRooms, readResultCards } from "@/lib/outcome-service";
 import { mergeResultCards } from "@/lib/result-card";
 import { getSignOffTransport } from "@/lib/sign-off-transport";
 import {
-  agentName,
-  agentViews,
-  funnelCounts,
+  buildOverview,
   initials,
-  pendingDeals,
   readableTerms,
-  type AgentTone,
-  type AgentView,
   type FunnelCounts,
   type PendingDeal,
+  type SupplierTone,
+  type SupplierView,
 } from "@/lib/overview";
 import { confirmSignOff } from "@/app/room/[id]/actions";
 import { DATA_PROVENANCE } from "@/lib/scenarios";
@@ -21,10 +17,10 @@ import { cn } from "@/lib/utils";
 /**
  * Overview — the human's first screen.
  *
- * Three questions, top to bottom: how are the deals going (funnel), what are
- * the agents doing (one card per agent), and what is waiting on me (deals to
- * confirm). Everything is derived in `@/lib/overview` from the same rooms,
- * cards and sign-offs the board and the room pages read.
+ * One story, three questions: how are the purchases going (funnel), where does
+ * each supplier stand (one row each, details on click), and what is waiting on
+ * me (deals to confirm). Everything is derived in `@/lib/overview` from the
+ * same rooms, cards and sign-offs the board and the room pages read.
  */
 
 export const dynamic = "force-dynamic";
@@ -35,71 +31,63 @@ export default async function OverviewPage() {
   const rawCards = await Promise.all(rooms.map((room) => readResultCards(room.room_id)));
   const entries = rooms.map((room, i) => ({ room, cards: mergeResultCards(rawCards[i]) }));
 
-  const funnel = funnelCounts(entries, signOffs);
-  const agents = agentViews(entries, signOffs);
-  const pending = pendingDeals(entries, signOffs);
+  const { buyer, funnel, suppliers, pending } = buildOverview(entries, signOffs);
+  const dropped = suppliers.filter((s) => s.dropped !== null);
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-10 px-6 py-12">
-      <header className="flex flex-col gap-1">
+    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-10 px-6 py-12">
+      <header className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">
-          Your agents are running {funnel.started} negotiations.{" "}
-          {pending.length === 0
-            ? "Nothing needs your decision right now."
-            : `${pending.length} ${pending.length === 1 ? "deal needs" : "deals need"} your decision.`}
+        <p className="max-w-2xl text-base text-neutral-700 dark:text-neutral-300">
+          Your buying agent{buyer ? ` (${buyer.name})` : ""} is negotiating with{" "}
+          {suppliers.length} suppliers for parts orders. Here&apos;s where each one stands.
         </p>
+        {pending.length > 0 && (
+          <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+            {pending.length === 1
+              ? "One deal is ready and waiting for your confirmation."
+              : `${pending.length} deals are ready and waiting for your confirmation.`}
+          </p>
+        )}
       </header>
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Metric label="Agents at work" value={agents.length} />
-        <Metric label="Negotiations" value={funnel.started} />
+        <Metric label="Suppliers contacted" value={funnel.contacted} />
         <Metric label="Waiting for you" value={pending.length} highlight={pending.length > 0} />
-        <Metric label="Closed deals" value={funnel.confirmed} />
+        <Metric label="Deals closed" value={funnel.confirmed} />
+        <Metric label="Dropped out" value={dropped.length} />
       </section>
 
       <section className="flex flex-col gap-3">
-        <SectionTitle title="Deal funnel" note={`${funnel.started} negotiations`} />
+        <h2 className="text-base font-semibold tracking-tight">How the deals are going</h2>
         <div className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-950">
-          <Funnel counts={funnel} />
+          <Funnel counts={funnel} suppliers={suppliers} />
         </div>
       </section>
 
+      {pending.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-base font-semibold tracking-tight">Waiting for you</h2>
+          {pending.map((deal) => (
+            <DealCard key={`${deal.room.room_id}-${deal.card.hash}`} deal={deal} />
+          ))}
+        </section>
+      )}
+
       <section className="flex flex-col gap-3">
-        <SectionTitle title="Agents" note={`${agents.length} agents`} />
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {agents.map((agent) => (
-            <AgentCard key={agent.id} agent={agent} />
+        <div className="flex items-baseline justify-between gap-2">
+          <h2 className="text-base font-semibold tracking-tight">Suppliers</h2>
+          <span className="text-xs text-neutral-500">Click a supplier for details</span>
+        </div>
+        <div className="divide-y divide-neutral-200 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-950">
+          {suppliers.map((s) => (
+            <SupplierRow key={s.roomId} supplier={s} />
           ))}
         </div>
       </section>
 
-      <section className="flex flex-col gap-3">
-        <SectionTitle
-          title="Waiting for you"
-          note={`${pending.length} ${pending.length === 1 ? "deal" : "deals"}`}
-        />
-        {pending.map((deal) => (
-          <DealCard key={`${deal.room.room_id}-${deal.card.hash}`} deal={deal} />
-        ))}
-        {pending.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500 dark:border-neutral-700">
-            Nothing is waiting on you. Your agents will bring the next deal here.
-          </div>
-        )}
-      </section>
-
       <footer className="text-xs text-neutral-500">{DATA_PROVENANCE}</footer>
     </main>
-  );
-}
-
-function SectionTitle({ title, note }: { title: string; note: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-2">
-      <h2 className="text-base font-semibold tracking-tight">{title}</h2>
-      <span className="text-xs text-neutral-500">{note}</span>
-    </div>
   );
 }
 
@@ -128,7 +116,8 @@ function Metric({ label, value, highlight }: { label: string; value: number; hig
 
 /**
  * A symmetric funnel: fixed trapezoids centred on one axis, so it reads as a
- * funnel whatever the numbers are. Labels sit to the left, drop-offs to the right.
+ * funnel whatever the numbers are. Labels sit to the left; to the right, the
+ * suppliers that dropped out at that step, by name.
  */
 const FUNNEL_HALF_WIDTHS = [170, 145, 118, 90, 62, 40];
 const FUNNEL_TONES = [
@@ -146,25 +135,29 @@ const FUNNEL_TEXT = [
   "fill-neutral-700 dark:fill-neutral-300",
 ];
 
-function Funnel({ counts }: { counts: FunnelCounts }) {
+function Funnel({ counts, suppliers }: { counts: FunnelCounts; suppliers: SupplierView[] }) {
   const cx = 340;
   const h = 46;
   const gap = 6;
   const stages = [
-    { label: "Started", value: counts.started },
-    { label: "Passed screening", value: counts.passedScreening },
-    { label: "Terms found", value: counts.termsFound },
-    { label: "All sides agree", value: counts.allAgree },
+    { label: "Suppliers contacted", value: counts.contacted },
+    { label: "Passed background check", value: counts.passedCheck },
+    { label: "Supplier accepted terms", value: counts.supplierAccepted },
+    { label: "Both sides agreed", value: counts.bothAgreed },
     { label: "Confirmed by you", value: counts.confirmed },
   ];
+  const names = (kind: SupplierView["dropped"]) =>
+    suppliers.filter((s) => s.dropped === kind).map((s) => s.name);
+  const failedCheck = names("check");
+  const noDeal = names("no-deal");
   const drops = [
-    { stage: 1, lines: [`${counts.blocked} blocked`, "by screening"], value: counts.blocked },
-    { stage: 2, lines: [`${counts.noDeal} no deal`, "price or deadline"], value: counts.noDeal },
-  ];
+    { stage: 1, title: `${failedCheck.length} failed the check`, names: failedCheck },
+    { stage: 2, title: `${noDeal.length} no deal`, names: noDeal },
+  ].filter((d) => d.names.length > 0);
 
   return (
     <svg
-      viewBox="0 0 680 280"
+      viewBox="0 0 700 280"
       className="w-full"
       role="img"
       aria-label={stages.map((s) => `${s.label}: ${s.value}`).join(", ")}
@@ -201,119 +194,98 @@ function Funnel({ counts }: { counts: FunnelCounts }) {
           </g>
         );
       })}
-      {drops
-        .filter((d) => d.value > 0)
-        .map((d) => {
-          const y = 10 + d.stage * (h + gap) + h / 2;
-          const x = cx + FUNNEL_HALF_WIDTHS[d.stage] - 8;
-          return (
-            <g key={d.stage}>
-              <path
-                d={`M${x} ${y} L${x + 36} ${y}`}
-                strokeWidth={1.5}
-                className="stroke-rose-500"
-              />
-              <path d={`M${x + 36} ${y - 4} L${x + 42} ${y} L${x + 36} ${y + 4} z`} className="fill-rose-500" />
-              <text x={x + 50} y={y - 2} className="fill-rose-700 text-[13px] font-medium dark:fill-rose-400">
-                {d.lines[0]}
-              </text>
-              <text x={x + 50} y={y + 14} className="fill-neutral-500 text-xs">
-                {d.lines[1]}
-              </text>
-            </g>
-          );
-        })}
+      {drops.map((d) => {
+        const y = 10 + d.stage * (h + gap) + h / 2;
+        const x = cx + FUNNEL_HALF_WIDTHS[d.stage] - 8;
+        return (
+          <g key={d.stage}>
+            <path d={`M${x} ${y} L${x + 30} ${y}`} strokeWidth={1.5} className="stroke-rose-500" />
+            <path d={`M${x + 30} ${y - 4} L${x + 36} ${y} L${x + 30} ${y + 4} z`} className="fill-rose-500" />
+            <text x={x + 44} y={y - 2} className="fill-rose-700 text-[13px] font-medium dark:fill-rose-400">
+              {d.title}
+            </text>
+            <text x={x + 44} y={y + 14} className="fill-neutral-500 text-xs">
+              {d.names.join(", ")}
+            </text>
+          </g>
+        );
+      })}
     </svg>
   );
 }
 
-const AVATAR_TONE: Record<AgentTone, string> = {
-  active: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300",
+const AVATAR_TONE: Record<SupplierTone, string> = {
   you: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-  waiting: "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
+  waiting: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300",
+  active: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300",
   done: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
   stopped: "bg-neutral-100 text-neutral-600 dark:bg-neutral-900 dark:text-neutral-400",
   blocked: "bg-neutral-100 text-neutral-600 dark:bg-neutral-900 dark:text-neutral-400",
 };
 
-const DOT_TONE: Record<AgentTone, string> = {
-  active: "bg-sky-500",
+const DOT_TONE: Record<SupplierTone, string> = {
   you: "bg-amber-500",
-  waiting: "bg-sky-400",
+  waiting: "bg-sky-500",
+  active: "bg-sky-400",
   done: "bg-emerald-500",
   stopped: "bg-rose-500",
   blocked: "bg-neutral-400",
 };
 
-function AgentCard({ agent }: { agent: AgentView }) {
-  const busy = agent.rooms.length > 1;
+function SupplierRow({ supplier: s }: { supplier: SupplierView }) {
+  const showTerms = s.dropped !== "check" && s.terms.length > 0;
   return (
-    <div
-      className={cn(
-        "flex gap-3 rounded-xl border bg-white p-4 dark:bg-neutral-950",
-        busy ? "border-sky-300 dark:border-sky-800" : "border-neutral-200 dark:border-neutral-800",
-      )}
-    >
-      <div
-        className={cn(
-          "flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold",
-          AVATAR_TONE[agent.tone],
-        )}
-      >
-        {agent.initials}
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="truncate font-medium">{agent.name}</span>
-          {busy ? (
-            <span className="shrink-0 text-xs text-neutral-500">{agent.rooms.length} deals</span>
-          ) : (
-            <Link
-              href={`/room/${agent.rooms[0]}`}
-              className="shrink-0 text-xs text-sky-700 hover:underline dark:text-sky-400"
-            >
-              Open deal
-            </Link>
+    <details className="group">
+      <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-900 [&::-webkit-details-marker]:hidden">
+        <div
+          className={cn(
+            "flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+            AVATAR_TONE[s.tone],
           )}
+        >
+          {s.initials}
         </div>
-        <div className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
-          <span className={cn("size-2 shrink-0 rounded-full", DOT_TONE[agent.tone])} />
-          {agent.status}
-        </div>
-        {agent.detail && (
-          <p className="line-clamp-2 text-xs text-neutral-500">{agent.detail}</p>
+        <span className="min-w-0 flex-1 truncate font-medium">{s.name}</span>
+        <span className="flex shrink-0 items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+          <span className={cn("size-2 rounded-full", DOT_TONE[s.tone])} />
+          {s.status}
+        </span>
+        <span className="text-neutral-400 transition-transform group-open:rotate-90">›</span>
+      </summary>
+      <div className="flex flex-col gap-3 bg-neutral-50 px-4 pb-4 pl-16 pt-1 dark:bg-neutral-900">
+        <p className="text-sm text-neutral-600 dark:text-neutral-400">{s.summary}</p>
+        {showTerms && (
+          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {s.terms.map((t) => (
+              <div key={t.label}>
+                <dt className="text-xs text-neutral-500">{t.label}</dt>
+                <dd className="text-sm font-medium">{t.value}</dd>
+              </div>
+            ))}
+          </dl>
         )}
       </div>
-    </div>
+    </details>
   );
 }
 
 function DealCard({ deal }: { deal: PendingDeal }) {
-  const { room, card } = deal;
-  const parties = room.participants.map(agentName);
+  const { room, card, supplier } = deal;
   const terms = readableTerms(card.terms);
   return (
-    <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
+    <div className="overflow-hidden rounded-2xl border border-amber-300 bg-white dark:border-amber-800 dark:bg-neutral-950">
       <div className="flex flex-wrap items-center justify-between gap-3 p-5">
         <div className="flex items-center gap-3">
-          <div className="flex -space-x-2">
-            {parties.map((name) => (
-              <div
-                key={name}
-                className="flex size-9 items-center justify-center rounded-full border-2 border-white bg-sky-100 text-xs font-semibold text-sky-800 dark:border-neutral-950 dark:bg-sky-950 dark:text-sky-300"
-              >
-                {initials(name)}
-              </div>
-            ))}
+          <div className="flex size-10 items-center justify-center rounded-full bg-amber-100 text-sm font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+            {initials(supplier)}
           </div>
           <div>
-            <div className="font-medium">{parties.join(" ↔ ")}</div>
-            <div className="text-sm text-neutral-600 dark:text-neutral-400">{card.summary}</div>
+            <div className="font-medium">Deal with {supplier}</div>
+            <div className="text-sm text-neutral-600 dark:text-neutral-400">
+              Your agent and the supplier both agreed. Confirm to close the deal.
+            </div>
           </div>
         </div>
-        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-          ✓ {card.agreed_by.length} of {card.required_parties.length} agreed
-        </span>
       </div>
       <dl
         className="grid border-y border-neutral-200 dark:border-neutral-800"
@@ -322,10 +294,7 @@ function DealCard({ deal }: { deal: PendingDeal }) {
         {terms.map((t, i) => (
           <div
             key={t.label}
-            className={cn(
-              "px-5 py-3",
-              i % 4 !== 0 && "border-l border-neutral-200 dark:border-neutral-800",
-            )}
+            className={cn("px-5 py-3", i % 4 !== 0 && "border-l border-neutral-200 dark:border-neutral-800")}
           >
             <dt className="text-xs text-neutral-500">{t.label}</dt>
             <dd className="text-base font-semibold">{t.value}</dd>
@@ -338,27 +307,15 @@ function DealCard({ deal }: { deal: PendingDeal }) {
       >
         <input type="hidden" name="room_id" value={room.room_id} />
         <input type="hidden" name="hash" value={card.hash} />
-        <span className="text-sm text-neutral-600 dark:text-neutral-400">
-          <span className="text-emerald-600 dark:text-emerald-400">●</span> Signed by every agent
-          and verifiable ·{" "}
-          <Link href={`/room/${room.room_id}`} className="underline hover:text-neutral-900 dark:hover:text-neutral-100">
-            show proof
-          </Link>
+        <span className="text-xs text-neutral-500">
+          Demo-level confirmation of these exact terms — no legal signature validity.
         </span>
-        <div className="flex items-center gap-2">
-          <Link
-            href={`/room/${room.room_id}`}
-            className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-          >
-            Open deal
-          </Link>
-          <button
-            type="submit"
-            className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-700"
-          >
-            Confirm deal
-          </button>
-        </div>
+        <button
+          type="submit"
+          className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
+        >
+          Confirm deal
+        </button>
       </form>
     </div>
   );

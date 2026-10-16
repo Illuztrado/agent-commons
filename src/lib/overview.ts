@@ -5,11 +5,14 @@ import { canConfirm, findSignOff, type HumanSignOff } from "./human-signoff";
 /**
  * The overview — one page a person can read in five seconds.
  *
+ * It tells one story: your buying agent negotiating with several suppliers.
  * Pure derivation over the same rooms, cards and sign-offs the board and the
- * dashboard read: a deal funnel, the agents and what each is doing, and the
- * deals waiting on the human. No new data and no state of its own, so the
- * overview cannot disagree with the room pages it links to.
+ * dashboard read — no new data and no state of its own, so the overview cannot
+ * disagree with the room pages.
  */
+
+/** The procurement story the overview tells; other scenarios live on their own pages. */
+export const OVERVIEW_SCENARIO = "commercial-terms";
 
 export interface OverviewRoom {
   room: RoomSummary;
@@ -18,33 +21,41 @@ export interface OverviewRoom {
 }
 
 export interface FunnelCounts {
-  started: number;
-  passedScreening: number;
-  termsFound: number;
-  allAgree: number;
+  contacted: number;
+  passedCheck: number;
+  supplierAccepted: number;
+  bothAgreed: number;
   confirmed: number;
-  /** Dropped before negotiating: no-match (e.g. flagged by screening). */
-  blocked: number;
-  /** Negotiated but no overlap: impasse. */
-  noDeal: number;
 }
 
-export type AgentTone = "active" | "you" | "done" | "waiting" | "stopped" | "blocked";
+export type SupplierTone = "you" | "waiting" | "done" | "stopped" | "blocked" | "active";
 
-export interface AgentView {
+export interface SupplierView {
   id: string;
   name: string;
   initials: string;
-  rooms: string[];
-  tone: AgentTone;
+  roomId: string;
+  tone: SupplierTone;
   status: string;
-  /** The room's own summary for a single-room agent; null when it runs several. */
-  detail: string | null;
+  /** Why the room ended where it did, in the agents' own words. */
+  summary: string;
+  terms: { label: string; value: string }[];
+  /** Dropped out of the funnel, and at which step. */
+  dropped: "check" | "no-deal" | null;
+}
+
+export interface Overview {
+  /** The agent present in every room — the person's own buyer. */
+  buyer: { id: string; name: string; initials: string } | null;
+  funnel: FunnelCounts;
+  suppliers: SupplierView[];
+  pending: PendingDeal[];
 }
 
 export interface PendingDeal {
   room: RoomSummary;
   card: ResultCard;
+  supplier: string;
 }
 
 /** A room counts as closed once a human has signed off any of its cards. */
@@ -52,7 +63,8 @@ function isConfirmed(cards: ResultCard[], signOffs: HumanSignOff[]): boolean {
   return cards.some((card) => findSignOff(signOffs, card) !== undefined);
 }
 
-const FUNNEL_AT_LEAST: Record<RoomStatus, number> = {
+/** How far down the funnel a room got: 0 contacted … 3 both agreed. */
+const FUNNEL_REACHED: Record<RoomStatus, number> = {
   "no-match": 0,
   impasse: 1,
   negotiating: 1,
@@ -62,29 +74,14 @@ const FUNNEL_AT_LEAST: Record<RoomStatus, number> = {
 
 export function funnelCounts(rooms: OverviewRoom[], signOffs: HumanSignOff[]): FunnelCounts {
   const reached = (stage: number) =>
-    rooms.filter(({ room }) => FUNNEL_AT_LEAST[room.status] >= stage).length;
+    rooms.filter(({ room }) => FUNNEL_REACHED[room.status] >= stage).length;
   return {
-    started: rooms.length,
-    passedScreening: reached(1),
-    termsFound: reached(2),
-    allAgree: reached(3),
+    contacted: rooms.length,
+    passedCheck: reached(1),
+    supplierAccepted: reached(2),
+    bothAgreed: reached(3),
     confirmed: rooms.filter(({ cards }) => isConfirmed(cards, signOffs)).length,
-    blocked: rooms.filter(({ room }) => room.status === "no-match").length,
-    noDeal: rooms.filter(({ room }) => room.status === "impasse").length,
   };
-}
-
-/**
- * Deals only the human can close: every required party agreed, and the card
- * stopped at the human step. A partial card stays with the agents.
- */
-export function pendingDeals(rooms: OverviewRoom[], signOffs: HumanSignOff[]): PendingDeal[] {
-  const out: PendingDeal[] = [];
-  for (const { room, cards } of rooms) {
-    const card = cards.find((c) => c.agreement === "full" && canConfirm(c, signOffs));
-    if (card) out.push({ room, card });
-  }
-  return out;
 }
 
 /** `Northwind-Supply-Agent.demo` → `Northwind Supply`. */
@@ -99,69 +96,88 @@ export function initials(name: string): string {
   return letters.toUpperCase();
 }
 
-function singleRoomStatus(
-  agent: string,
-  room: RoomSummary,
-  cards: ResultCard[],
+/** The agent that sits in every room — the person's own. Null if there is none. */
+function findBuyer(rooms: OverviewRoom[]): string | null {
+  if (rooms.length === 0) return null;
+  const [first, ...rest] = rooms;
+  return (
+    first.room.participants.find((p) => rest.every((r) => r.room.participants.includes(p))) ??
+    null
+  );
+}
+
+function supplierStatus(
+  supplier: string,
+  { room, cards }: OverviewRoom,
   signOffs: HumanSignOff[],
-): { tone: AgentTone; status: string } {
-  if (isConfirmed(cards, signOffs)) return { tone: "done", status: "Deal closed" };
+): Pick<SupplierView, "tone" | "status" | "dropped"> {
+  if (isConfirmed(cards, signOffs)) return { tone: "done", status: "Deal closed", dropped: null };
   switch (room.status) {
     case "agreed":
       return cards.some((c) => c.agreement === "full" && canConfirm(c, signOffs))
-        ? { tone: "you", status: "Agreed · waiting for you" }
-        : { tone: "done", status: "Agreed by all sides" };
+        ? { tone: "you", status: "Deal agreed · waiting for you", dropped: null }
+        : { tone: "done", status: "Deal agreed", dropped: null };
     case "partial": {
-      const card = cards.find((c) => c.status === "agreed");
-      if (card && !card.agreed_by.includes(agent)) {
-        return { tone: "active", status: "Still deciding" };
-      }
-      const left = room.required_parties - room.agreed_parties;
-      return {
-        tone: "waiting",
-        status: `Agreed · waiting for ${left} more ${left === 1 ? "party" : "parties"}`,
-      };
+      const accepted = cards.some((c) => c.status === "agreed" && c.agreed_by.includes(supplier));
+      return accepted
+        ? { tone: "waiting", status: "Accepted the terms · your agent is deciding", dropped: null }
+        : { tone: "active", status: "Considering your agent's offer", dropped: null };
     }
     case "impasse":
-      return { tone: "stopped", status: "Stopped · no deal" };
+      return { tone: "stopped", status: "No deal", dropped: "no-deal" };
     case "no-match":
-      return { tone: "blocked", status: "No match" };
+      return { tone: "blocked", status: "Failed the background check", dropped: "check" };
     default:
-      return { tone: "active", status: "Negotiating" };
+      return { tone: "active", status: "Negotiating", dropped: null };
   }
 }
 
-/** Every agent seen in any room, busiest first. */
-export function agentViews(rooms: OverviewRoom[], signOffs: HumanSignOff[]): AgentView[] {
-  const byAgent = new Map<string, OverviewRoom[]>();
-  for (const entry of rooms) {
-    for (const agent of entry.room.participants) {
-      const list = byAgent.get(agent) ?? [];
-      list.push(entry);
-      byAgent.set(agent, list);
-    }
-  }
+const TONE_ORDER: Record<SupplierTone, number> = {
+  you: 0,
+  waiting: 1,
+  active: 2,
+  done: 3,
+  stopped: 4,
+  blocked: 5,
+};
 
-  const views: AgentView[] = [];
-  for (const [id, entries] of byAgent) {
-    const name = agentName(id);
-    const base = { id, name, initials: initials(name), rooms: entries.map((e) => e.room.room_id) };
-    if (entries.length > 1) {
-      const waiting = pendingDeals(entries, signOffs).length;
-      views.push({
-        ...base,
-        tone: "active",
-        status:
-          `Negotiating ${entries.length} deals in parallel` +
-          (waiting > 0 ? ` · ${waiting} waiting for you` : ""),
-        detail: null,
-      });
-    } else {
-      const [{ room, cards }] = entries;
-      views.push({ ...base, ...singleRoomStatus(id, room, cards, signOffs), detail: room.summary });
-    }
+/**
+ * Everything the overview shows, for the procurement story only. Rooms from
+ * other scenarios (the friends' picnic, live demo runs of other kinds) are left
+ * to their own pages so the funnel counts one kind of thing.
+ */
+export function buildOverview(allRooms: OverviewRoom[], signOffs: HumanSignOff[]): Overview {
+  const rooms = allRooms.filter(({ room }) => room.scenario === OVERVIEW_SCENARIO);
+  const buyerId = findBuyer(rooms);
+
+  const suppliers: SupplierView[] = [];
+  const pending: PendingDeal[] = [];
+  for (const entry of rooms) {
+    const others = entry.room.participants.filter((p) => p !== buyerId);
+    const id = others[0] ?? entry.room.participants[0];
+    const name = others.map(agentName).join(", ") || agentName(id);
+    const card = entry.cards[0];
+    suppliers.push({
+      id,
+      name,
+      initials: initials(name),
+      roomId: entry.room.room_id,
+      summary: entry.room.summary,
+      terms: card ? readableTerms(card.terms) : [],
+      ...supplierStatus(id, entry, signOffs),
+    });
+    const waiting = entry.cards.find((c) => c.agreement === "full" && canConfirm(c, signOffs));
+    if (waiting) pending.push({ room: entry.room, card: waiting, supplier: name });
   }
-  return views.sort((a, b) => b.rooms.length - a.rooms.length);
+  suppliers.sort((a, b) => TONE_ORDER[a.tone] - TONE_ORDER[b.tone]);
+
+  const buyerName = buyerId ? agentName(buyerId) : null;
+  return {
+    buyer: buyerId && buyerName ? { id: buyerId, name: buyerName, initials: initials(buyerName) } : null,
+    funnel: funnelCounts(rooms, signOffs),
+    suppliers,
+    pending,
+  };
 }
 
 const TERM_LABELS: Record<string, string> = {

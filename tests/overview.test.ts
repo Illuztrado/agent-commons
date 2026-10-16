@@ -4,7 +4,7 @@ import { SEED_CARDS } from "../src/lib/seed";
 import { DemoTransport } from "../src/lib/transport";
 import { mergeResultCards } from "../src/lib/result-card";
 import { buildSignOff } from "../src/lib/human-signoff";
-import { agentName, agentViews, funnelCounts, pendingDeals, readableTerms } from "../src/lib/overview";
+import { agentName, buildOverview, readableTerms } from "../src/lib/overview";
 
 /**
  * The overview page's derivations, over the real seed story.
@@ -22,39 +22,46 @@ async function seedRooms() {
   );
 }
 
-test("the funnel narrows from started to confirmed, with drop-offs counted aside", async () => {
-  const counts = funnelCounts(await seedRooms(), []);
-  assert.deepEqual(counts, {
-    started: 6,
-    passedScreening: 5,
-    termsFound: 3,
-    allAgree: 1,
+test("the overview tells the procurement story only, from the buyer's side", async () => {
+  const { buyer, suppliers } = buildOverview(await seedRooms(), []);
+  assert.equal(buyer?.name, "Acme Buyer");
+  assert.deepEqual(
+    suppliers.map((s) => s.name).sort(),
+    ["Delta Parts", "Northwind Supply", "Orion Components", "Shell Co", "Vega Metals"],
+  );
+});
+
+test("the funnel narrows from contacted to confirmed", async () => {
+  const { funnel } = buildOverview(await seedRooms(), []);
+  assert.deepEqual(funnel, {
+    contacted: 5,
+    passedCheck: 4,
+    supplierAccepted: 2,
+    bothAgreed: 1,
     confirmed: 0,
-    blocked: 1,
-    noDeal: 2,
   });
+});
+
+test("dropped suppliers are named with the step they dropped at", async () => {
+  const { suppliers } = buildOverview(await seedRooms(), []);
+  const dropped = Object.fromEntries(suppliers.map((s) => [s.name, s.dropped]));
+  assert.equal(dropped["Shell Co"], "check");
+  assert.equal(dropped["Orion Components"], "no-deal");
+  assert.equal(dropped["Vega Metals"], "no-deal");
+  assert.equal(dropped["Northwind Supply"], null);
 });
 
 test("only a fully agreed deal waits for the human, and leaves once confirmed", async () => {
   const rooms = await seedRooms();
-  const pending = pendingDeals(rooms, []);
-  assert.deepEqual(pending.map((p) => p.room.room_id), ["room-northwind"]);
+  const before = buildOverview(rooms, []);
+  assert.deepEqual(before.pending.map((p) => p.supplier), ["Northwind Supply"]);
+  assert.equal(before.suppliers[0].status, "Deal agreed · waiting for you");
 
   const card = SEED_CARDS.find((c) => c.room_id === "room-northwind")!;
-  const signOffs = [buildSignOff({ card })];
-  assert.equal(pendingDeals(rooms, signOffs).length, 0);
-  assert.equal(funnelCounts(rooms, signOffs).confirmed, 1);
-});
-
-test("agents are listed busiest first, with a plain-language status", async () => {
-  const agents = agentViews(await seedRooms(), []);
-  assert.equal(agents.length, 9);
-  assert.equal(agents[0].name, "Acme Buyer");
-  assert.match(agents[0].status, /5 deals in parallel/);
-  const northwind = agents.find((a) => a.name === "Northwind Supply")!;
-  assert.equal(northwind.status, "Agreed · waiting for you");
-  const cy = agents.find((a) => a.name === "Cy")!;
-  assert.equal(cy.status, "Still deciding");
+  const after = buildOverview(rooms, [buildSignOff({ card })]);
+  assert.equal(after.pending.length, 0);
+  assert.equal(after.funnel.confirmed, 1);
+  assert.equal(after.suppliers.find((s) => s.name === "Northwind Supply")?.status, "Deal closed");
 });
 
 test("names and terms read as a person would say them", () => {
