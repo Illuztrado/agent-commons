@@ -77,8 +77,10 @@ export default async function OverviewPage() {
 
       <section className="flex flex-col gap-3">
         <div className="flex items-baseline justify-between gap-2">
-          <h2 className="text-base font-semibold tracking-tight">Suppliers</h2>
-          <span className="text-xs text-neutral-500">Click a supplier for details</span>
+          <h2 className="text-base font-semibold tracking-tight">
+            Companies your agent is negotiating with
+          </h2>
+          <span className="text-xs text-neutral-500">Click a company for details</span>
         </div>
         <div className="divide-y divide-neutral-200 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-950">
           {suppliers.map((s) => (

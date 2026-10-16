@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge, Button } from "@/components/ui";
 
 interface ClaimAssessment {
@@ -78,6 +78,16 @@ function Field({
   );
 }
 
+async function requestCard(body: unknown): Promise<CardResponse> {
+  const res = await fetch("/api/agent-card", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as CardResponse;
+}
+
 export default function AgentEditorPage() {
   const [displayName, setDisplayName] = useState("Acme Buyer Agent");
   const [ownerName, setOwnerName] = useState("Acme Corp");
@@ -90,7 +100,8 @@ export default function AgentEditorPage() {
   const [screening, setScreening] = useState(true);
 
   const [data, setData] = useState<CardResponse | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const split = (s: string) =>
@@ -99,25 +110,21 @@ export default function AgentEditorPage() {
       .map((x) => x.trim())
       .filter(Boolean);
 
+  const currentBody = () => ({
+    display_name: displayName,
+    owner_name: ownerName,
+    owner_contact: ownerContact,
+    capabilities: split(capabilities),
+    may_disclose: split(mayDisclose),
+    must_not_disclose: split(mustNot),
+    levels: { owner_binding: ownerBinding, capability_probe: probe, screening },
+  });
+
   async function build() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/agent-card", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          display_name: displayName,
-          owner_name: ownerName,
-          owner_contact: ownerContact,
-          capabilities: split(capabilities),
-          may_disclose: split(mayDisclose),
-          must_not_disclose: split(mustNot),
-          levels: { owner_binding: ownerBinding, capability_probe: probe, screening },
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setData((await res.json()) as CardResponse);
+      setData(await requestCard(currentBody()));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -125,18 +132,33 @@ export default function AgentEditorPage() {
     }
   }
 
+  // Show the agent's current profile straight away; editing is the exception.
+  const [initialBody] = useState(currentBody);
+  useEffect(() => {
+    requestCard(initialBody)
+      .then(setData)
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+  }, [initialBody]);
+
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-6 py-12">
       <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Your agent</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">Agent profile</h1>
+          <Button variant={editing ? "ghost" : "default"} onClick={() => setEditing((v) => !v)}>
+            {editing ? "Close editor" : "Edit profile"}
+          </Button>
+        </div>
         <p className="max-w-2xl text-base text-neutral-700 dark:text-neutral-300">
-          Agent card editor: describe the agent that negotiates for you. Other companies&apos;
-          agents read this card to decide whether to trust it — so every check shows
-          whether it is verified or just claimed.
+          The agent that negotiates for you, as other companies&apos; agents see it. Before
+          talking, they read this profile to decide whether to trust it — so every check
+          shows whether it is verified or only claimed.
         </p>
       </header>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className={editing ? "grid grid-cols-1 gap-6 lg:grid-cols-2" : "flex flex-col"}>
+        {editing && (
         <div className="flex flex-col gap-4 rounded-2xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-950">
           <Field label="Agent name" value={displayName} onChange={setDisplayName} />
           <Field label="Company" value={ownerName} onChange={setOwnerName} />
@@ -182,11 +204,13 @@ export default function AgentEditorPage() {
             </div>
           </details>
 
+          <span className="text-xs text-neutral-500">Agent card editor — the profile is signed when saved.</span>
           <Button onClick={build} disabled={loading} className="py-2">
-            {loading ? "Creating…" : "Create agent card"}
+            {loading ? "Saving…" : "Save and sign profile"}
           </Button>
-          {error && <p className="text-sm text-rose-600">Couldn&apos;t create the card: {error}</p>}
+          {error && <p className="text-sm text-rose-600">Couldn&apos;t save the profile: {error}</p>}
         </div>
+        )}
 
         <div className="flex flex-col gap-4">
           {data ? (
@@ -225,8 +249,7 @@ export default function AgentEditorPage() {
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-neutral-300 p-6 text-sm text-neutral-500 dark:border-neutral-700">
-              Fill in the details and press <span className="font-medium">Create agent card</span>{" "}
-              to see what other agents will see.
+              {loading ? "Loading your agent's profile…" : "No profile yet — press Edit profile to create one."}
             </div>
           )}
         </div>

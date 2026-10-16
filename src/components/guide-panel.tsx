@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
+import { Badge, Button } from "@/components/ui";
 
 /**
  * Ask the guide — the panel that makes the Gemini demonstration client
@@ -70,12 +70,23 @@ export function GuidePanel() {
   }
 
   return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between">
-        <CardTitle className="text-base">Ask about your deals</CardTitle>
-        <Badge tone="blue">powered by Gemini</Badge>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+    <div className="rounded-2xl bg-gradient-to-br from-sky-400 via-violet-400 to-rose-300 p-[1.5px]">
+      <div className="flex flex-col gap-4 rounded-2xl bg-white p-5 dark:bg-neutral-950">
+        <div className="flex items-center gap-3">
+          <GeminiMark className="size-10 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-semibold tracking-tight">Gemini assistant</h2>
+              <span className="rounded-full border border-violet-300 px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:border-violet-800 dark:text-violet-300">
+                separate AI agent
+              </span>
+            </div>
+            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+              Reads your deals and answers questions about them. It is not part of the
+              dashboard — the deals above come from the agents, not from Gemini.
+            </p>
+          </div>
+        </div>
         <div className="flex flex-wrap gap-1.5">
           {SUGGESTED_QUESTIONS.map((q) => (
             <button
@@ -103,7 +114,7 @@ export function GuidePanel() {
           <input
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Ask anything about your deals"
+            placeholder="Ask Gemini about your deals"
             className="min-w-0 flex-1 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-950"
           />
           <Button type="submit" disabled={loading || !question.trim()}>
@@ -144,10 +155,29 @@ export function GuidePanel() {
         )}
 
         <p className="text-[11px] leading-relaxed text-neutral-400 dark:text-neutral-500">
-          A demo client that answers from the live deals with a Gemini call. Without an
-          API key it falls back to a fixed answer and says so.
+          A demo client attached to show a Gemini call in context: it answers from the live
+          deals. Without an API key it falls back to a fixed answer and says so.
         </p>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
+  );
+}
+
+/** The Gemini sparkle — four-pointed star in Gemini's blue-to-violet gradient. */
+function GeminiMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 28 28" className={className} aria-hidden="true">
+      <defs>
+        <linearGradient id="gemini-mark" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#4285F4" />
+          <stop offset="55%" stopColor="#9B72CB" />
+          <stop offset="100%" stopColor="#D96570" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M14 0C14 7.732 7.732 14 0 14c7.732 0 14 6.268 14 14 0-7.732 6.268-14 14-14-7.732 0-14-6.268-14-14Z"
+        fill="url(#gemini-mark)"
+      />
+    </svg>
   );
 }

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { SiteNav } from "@/components/site-nav";
+import { DemoLauncher } from "@/components/demo-launcher";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className="min-h-full flex flex-col">
         <SiteNav />
         {children}
+        <DemoLauncher />
       </body>
     </html>
   );

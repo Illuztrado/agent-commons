@@ -5,14 +5,13 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 /**
- * The three places a person needs: their deals, the agents at work, and their
- * own agent. Older views (results board, dashboard, multi-party) still answer
- * at their URLs but stay out of the menu.
+ * The two places a person needs: their deals and their own agent. The live
+ * demo opens from a floating button instead; older views (results board,
+ * dashboard, multi-party, /demo) still answer at their URLs.
  */
 const LINKS = [
   { href: "/", label: "Overview" },
-  { href: "/demo", label: "Watch agents negotiate" },
-  { href: "/agent", label: "Your agent" },
+  { href: "/agent", label: "Agent profile" },
 ];
 
 export function SiteNav() {

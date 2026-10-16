@@ -39,9 +39,9 @@ checks.push(
 // answered. Read-only: every answer is grounded in the live board.
 checks.push(
   [
-    home.includes("Ask about your deals") && home.includes("A demo client"),
+    home.includes("Gemini assistant") && home.includes("A demo client"),
     "guide: the panel is on the overview, labelled as a demo client",
-    "Ask about your deals + demo client",
+    "Gemini assistant + demo client",
   ],
   [
     home.includes("Overview") && home.includes("Both sides agreed") && home.includes("Confirm deal"),
@@ -136,9 +136,9 @@ checks.push([demo.includes("Live negotiation"), "demo: live negotiation page ren
 // Agent card editor + builder.
 const agentPage = await get("/agent");
 checks.push([
-  agentPage.includes("Agent card editor"),
-  "agent: card editor page renders",
-  "Agent card editor",
+  agentPage.includes("Agent profile") && agentPage.includes("Edit profile"),
+  "agent: profile page renders with its editor one click away",
+  "Agent profile + Edit profile",
 ]);
 
 const built = await post("/api/agent-card", {
