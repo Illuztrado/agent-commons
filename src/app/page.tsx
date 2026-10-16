@@ -34,8 +34,7 @@ export default async function OverviewPage() {
   const rawCards = await Promise.all(rooms.map((room) => readResultCards(room.room_id)));
   const entries = rooms.map((room, i) => ({ room, cards: mergeResultCards(rawCards[i]) }));
 
-  const { buyer, funnel, suppliers, pending } = buildOverview(entries, signOffs);
-  const dropped = suppliers.filter((s) => s.dropped !== null);
+  const { buyer, suppliers, pending } = buildOverview(entries, signOffs);
   const stages = funnelStages(suppliers);
   const trusts = Object.fromEntries(suppliers.map((s) => [s.roomId, counterpartyTrust(s.roomId)]));
   const waitingValue = pending.reduce(
@@ -62,13 +61,6 @@ export default async function OverviewPage() {
         )}
       </header>
 
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Metric label="Suppliers contacted" value={funnel.contacted} />
-        <Metric label="Waiting for you" value={pending.length} highlight={pending.length > 0} />
-        <Metric label="Deals closed" value={funnel.confirmed} />
-        <Metric label="Dropped out" value={dropped.length} />
-      </section>
-
       {pending.length > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="text-base font-semibold tracking-tight">Waiting for you</h2>
@@ -89,29 +81,6 @@ export default async function OverviewPage() {
 
       <footer className="text-xs text-neutral-500">{DATA_PROVENANCE}</footer>
     </main>
-  );
-}
-
-function Metric({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) {
-  return (
-    <div
-      className={cn(
-        "rounded-xl p-4",
-        highlight
-          ? "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-          : "bg-neutral-100 dark:bg-neutral-900",
-      )}
-    >
-      <div
-        className={cn(
-          "text-xs",
-          highlight ? "text-amber-700 dark:text-amber-400" : "text-neutral-600 dark:text-neutral-400",
-        )}
-      >
-        {label}
-      </div>
-      <div className="text-3xl font-semibold tracking-tight">{value}</div>
-    </div>
   );
 }
 
