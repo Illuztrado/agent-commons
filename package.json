@@ -12,6 +12,7 @@
     "test": "tsc -p tsconfig.test.json && node --test '.tmp-tests/tests/**/*.test.js'",
     "verify:hash": "node scripts/verify-hash.mjs",
     "smoke": "node scripts/smoke.mjs",
+    "demo:two-agents": "node --import tsx scripts/demo/run-two-agents.mts",
     "check:transport": "node --import tsx scripts/firestore-transport-check.mts",
     "emulator:firestore": "node --import tsx scripts/firestore-emulator.mts"
   },
