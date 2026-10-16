@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buyerTrust, counterpartyTrust } from "../src/lib/agent-trust";
-import { trustBadges, trustSummary } from "../src/lib/trust-badges";
+import { trustBadges, trustSummary, trustWarning } from "../src/lib/trust-badges";
 
 /**
  * Trust badges over the real seeded agent cards. Run with: npm test
@@ -52,4 +52,10 @@ test("unclaimed checks read as missing, not as verified", () => {
   });
   assert.equal(states(badges).owner_binding, "missing");
   assert.equal(trustSummary(badges).label, "1 of 4 verified");
+});
+
+test("a deal warns only when the counterparty's agent failed a check", () => {
+  assert.match(trustWarning(counterpartyTrust("room-northwind")!) ?? "", /profile has expired/);
+  assert.match(trustWarning(counterpartyTrust("room-shell")!) ?? "", /failed the background check/);
+  assert.equal(trustWarning(buyerTrust()), null);
 });

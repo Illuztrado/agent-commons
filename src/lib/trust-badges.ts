@@ -59,3 +59,27 @@ export function trustSummary(badges: TrustBadge[]): { tone: "good" | "partial" |
   if (verified === badges.length) return { tone: "good", label: "Fully verified" };
   return { tone: "partial", label: `${verified} of ${badges.length} verified` };
 }
+
+/**
+ * Why a person should think twice before confirming a deal with this agent,
+ * or null when nothing failed. Only failed checks warn: "only claimed" is the
+ * normal state of most demo cards and would make every deal look alarming.
+ */
+export function trustWarning(agent: {
+  name: string;
+  lapsed: boolean;
+  badges: TrustBadge[];
+}): string | null {
+  const failed = agent.badges.filter((b) => b.state === "failed").map((b) => b.key);
+  if (failed.length === 0) return null;
+  if (failed.includes("key_control")) {
+    return `${agent.name}'s messages can't be authenticated — anyone could have sent them.`;
+  }
+  if (agent.lapsed) {
+    return `${agent.name}'s profile has expired, so its owner and background check can no longer be verified.`;
+  }
+  if (failed.includes("screening")) {
+    return `${agent.name} failed the background check.`;
+  }
+  return `${agent.name} failed a trust check: ${failed.map((k) => TRUST_LABEL[k]).join(", ")}.`;
+}

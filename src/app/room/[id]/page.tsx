@@ -7,7 +7,9 @@ import { canConfirm, cardStage, findSignOff, type HumanSignOff } from "@/lib/hum
 import { recomputeHash } from "@/lib/seed";
 import { assessCard } from "@/lib/agent-card";
 import { verifyCard, verifyEvidence } from "@/lib/agent-card-demo";
-import { cardsForRoom } from "@/lib/agent-trust";
+import { cardsForRoom, counterpartyTrust } from "@/lib/agent-trust";
+import { trustWarning } from "@/lib/trust-badges";
+import { TrustWarning } from "@/components/trust-warning";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { agentName, buildOverview, readableTerms } from "@/lib/overview";
 import type { RoomSummary } from "@/lib/transport";
@@ -102,6 +104,8 @@ export default async function RoomPage({
   const state = dealState(room, merged, signOffs);
   const primary = merged[0];
   const pending = merged.find((c) => canConfirm(c, signOffs));
+  const counterparty = counterpartyTrust(id);
+  const warning = counterparty ? trustWarning(counterparty) : null;
 
   const agentCards = cardsForRoom(id).map((card) => {
     const assessment = assessCard(card, verifyCard(card));
@@ -150,6 +154,7 @@ export default async function RoomPage({
               </div>
             ))}
           </dl>
+          {pending && warning && <TrustWarning message={warning} />}
           {pending && (
             <form
               action={confirmSignOff}

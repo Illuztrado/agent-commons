@@ -14,6 +14,8 @@ import { confirmSignOff } from "@/app/room/[id]/actions";
 import { GuidePanel } from "@/components/guide-panel";
 import { TrustBadges, TrustSummary } from "@/components/trust-badges";
 import { counterpartyTrust, type AgentTrust } from "@/lib/agent-trust";
+import { trustWarning } from "@/lib/trust-badges";
+import { TrustWarning } from "@/components/trust-warning";
 import { DATA_PROVENANCE } from "@/lib/scenarios";
 import { cn } from "@/lib/utils";
 
@@ -305,6 +307,8 @@ function SupplierRow({ supplier: s, trust }: { supplier: SupplierView; trust: Ag
 function DealCard({ deal }: { deal: PendingDeal }) {
   const { room, card, supplier } = deal;
   const terms = readableTerms(card.terms);
+  const trust = counterpartyTrust(room.room_id);
+  const warning = trust ? trustWarning(trust) : null;
   return (
     <div className="overflow-hidden rounded-2xl border border-amber-300 bg-white dark:border-amber-800 dark:bg-neutral-950">
       <div className="flex flex-wrap items-center justify-between gap-3 p-5">
@@ -334,6 +338,7 @@ function DealCard({ deal }: { deal: PendingDeal }) {
           </div>
         ))}
       </dl>
+      {warning && <TrustWarning message={warning} />}
       <form
         action={confirmSignOff}
         className="flex flex-wrap items-center justify-between gap-3 bg-neutral-50 px-5 py-3 dark:bg-neutral-900"
