@@ -43,3 +43,13 @@ export function counterpartyTrust(roomId: string): AgentTrust | null {
   const [, other] = cardsForRoom(roomId);
   return other ? trustOf(other) : null;
 }
+
+/** What the person's own seeded agent is set up with — the editable parts of its card. */
+export function buyerProfile() {
+  const card = demoBuyerCard();
+  return {
+    contact: card.owner.contact,
+    capabilities: card.capabilities,
+    policy: { may: card.owner_policy.may_disclose, never: card.owner_policy.must_not_disclose },
+  };
+}

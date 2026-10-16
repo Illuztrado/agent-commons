@@ -59,7 +59,7 @@ inputs produce the same cards and the same hash.
 | Route | What it shows |
 |---|---|
 | `/` | **Overview** — the buyer's deals as a funnel, each supplier's status, and the deal waiting for the human's **Confirm** |
-| `/agent` | **Agents** — your agents (create more; each gets a signed card), each with four trust badges: Signed, Real owner, Tested skills, Background check — verified / only claimed / failed. The counterparties' agents and their badges are on the Overview, with their companies |
+| `/agent` | **Agents** — your agents (create more; each gets a signed card) with **permission switches** for what each may tell other agents (its card's `owner_policy`; every change re-signs the card), each with four trust badges: Signed, Real owner, Tested skills, Background check — verified / only claimed / failed. The counterparties' agents and their badges are on the Overview, with their companies |
 | **Run live demo** (floating button, every page) | Two-party price negotiation and three-party consensus, run live in a side panel; also at `/demo` |
 | `/room/[id]` | One deal: terms, status, **Confirm**; proof for auditors (hashes, L0–L3 claims) folded below |
 | `/board`, `/dashboard`, `/multi` | Earlier views, kept at their URLs but out of the menu |

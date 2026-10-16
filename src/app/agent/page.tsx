@@ -3,7 +3,7 @@ import { listRooms, readResultCards } from "@/lib/outcome-service";
 import { mergeResultCards } from "@/lib/result-card";
 import { getSignOffTransport } from "@/lib/sign-off-transport";
 import { buildOverview } from "@/lib/overview";
-import { buyerTrust } from "@/lib/agent-trust";
+import { buyerProfile, buyerTrust } from "@/lib/agent-trust";
 import { TrustLegend } from "@/components/trust-badges";
 import { YourAgents, type AgentSummary } from "@/components/your-agents";
 
@@ -26,12 +26,21 @@ export default async function AgentsPage() {
   const { suppliers } = buildOverview(entries, signOffs);
 
   const buyer = buyerTrust();
+  const profile = buyerProfile();
   const seeded: AgentSummary = {
     id: "seeded-buyer",
     name: buyer.name,
     company: buyer.company,
     role: `buying parts · negotiating with ${suppliers.length} companies`,
     badges: buyer.badges,
+    policy: profile.policy,
+    basics: {
+      display_name: buyer.name,
+      owner_name: buyer.company,
+      owner_contact: profile.contact,
+      capabilities: profile.capabilities,
+      levels: { owner_binding: true, capability_probe: true, screening: true },
+    },
   };
 
   return (
