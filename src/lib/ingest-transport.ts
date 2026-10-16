@@ -1,4 +1,4 @@
-import { mergeResultCards, type ResultCard } from "./result-card";
+import { type ResultCard } from "./result-card";
 import { roomStatusFromCards, type RoomSummary, type Transport } from "./transport";
 // Which transport the write lands in is decided in one place (env switch), so
 // this wraps whatever that place selected rather than assuming the demo one.
@@ -151,9 +151,14 @@ export function getIngestTransport(): ResultCardIngest {
 export async function listRoomsWithPosted(): Promise<RoomSummary[]> {
   const ingest = getIngestTransport();
   const rooms = await ingest.listRooms();
-  const posted = mergeResultCards(await ingest.listPostedCards());
+  const posted = await ingest.listPostedCards();
   if (posted.length === 0) return rooms;
 
+  // Group by room *before* anything is merged. Merging is per hash, and two
+  // different rooms can legitimately agree over the same terms — merging across
+  // rooms first collapsed them into a single row, so the second room stayed
+  // readable through `read_result_cards` but never reached the board. Each
+  // room rolls itself up in `summaryFromCards`, which merges within the room.
   const byRoom = new Map<string, ResultCard[]>();
   for (const card of posted) {
     byRoom.set(card.room_id, [...(byRoom.get(card.room_id) ?? []), card]);
