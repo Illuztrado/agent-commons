@@ -4,7 +4,7 @@ import { SEED_CARDS } from "../src/lib/seed";
 import { DemoTransport } from "../src/lib/transport";
 import { mergeResultCards } from "../src/lib/result-card";
 import { buildSignOff } from "../src/lib/human-signoff";
-import { agentName, buildOverview, readableTerms } from "../src/lib/overview";
+import { agentName, buildOverview, funnelStages, readableTerms } from "../src/lib/overview";
 
 /**
  * The overview page's derivations, over the real seed story.
@@ -72,4 +72,19 @@ test("names and terms read as a person would say them", () => {
     { label: "Delivery", value: "21 days" },
     { label: "Quantity", value: "5,000" },
   ]);
+});
+
+test("each funnel stage carries its order value and pass-through rate", async () => {
+  const { suppliers } = buildOverview(await seedRooms(), []);
+  const stages = funnelStages(suppliers);
+  assert.deepEqual(
+    stages.map((s) => [s.count, s.value, s.pct]),
+    [
+      [5, 39290, null],
+      [4, 39290, 80],
+      [2, 31530, 50],
+      [1, 20250, 50],
+      [0, 0, 0],
+    ],
+  );
 });

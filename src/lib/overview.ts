@@ -42,6 +42,19 @@ export interface SupplierView {
   terms: { label: string; value: string }[];
   /** Dropped out of the funnel, and at which step. */
   dropped: "check" | "no-deal" | null;
+  /** Furthest funnel stage reached: 0 contacted … 4 confirmed by you. */
+  reached: number;
+  /** Order value from the terms (quantity × unit price), or null if unpriced. */
+  value: number | null;
+}
+
+export interface FunnelStage {
+  label: string;
+  count: number;
+  /** Sum of order values of the companies at this stage. */
+  value: number;
+  /** Share of the previous stage that made it here; null for the first stage. */
+  pct: number | null;
 }
 
 export interface Overview {
@@ -158,7 +171,10 @@ export function buildOverview(allRooms: OverviewRoom[], signOffs: HumanSignOff[]
     const id = others[0] ?? entry.room.participants[0];
     const name = others.map(agentName).join(", ") || agentName(id);
     const card = entry.cards[0];
+    const confirmed = isConfirmed(entry.cards, signOffs);
     suppliers.push({
+      reached: confirmed ? 4 : FUNNEL_REACHED[entry.room.status],
+      value: card ? orderValue(card.terms) : null,
       id,
       name,
       initials: initials(name),
@@ -179,6 +195,34 @@ export function buildOverview(allRooms: OverviewRoom[], signOffs: HumanSignOff[]
     suppliers,
     pending,
   };
+}
+
+/** quantity × unit price, when both are positive numbers. */
+export function orderValue(terms: Record<string, unknown>): number | null {
+  const { quantity, unit_price } = terms;
+  if (typeof quantity !== "number" || typeof unit_price !== "number") return null;
+  const value = quantity * unit_price;
+  return value > 0 ? Math.round(value * 100) / 100 : null;
+}
+
+export const FUNNEL_LABELS = [
+  "Suppliers contacted",
+  "Passed background check",
+  "Supplier accepted terms",
+  "Both sides agreed",
+  "Confirmed by you",
+];
+
+/** Count, order value and pass-through rate for each funnel stage. */
+export function funnelStages(suppliers: SupplierView[]): FunnelStage[] {
+  const stages = FUNNEL_LABELS.map((label, i) => {
+    const at = suppliers.filter((s) => s.reached >= i);
+    return { label, count: at.length, value: at.reduce((sum, s) => sum + (s.value ?? 0), 0) };
+  });
+  return stages.map((stage, i) => ({
+    ...stage,
+    pct: i === 0 ? null : stages[i - 1].count === 0 ? 0 : Math.round((stage.count / stages[i - 1].count) * 100),
+  }));
 }
 
 const TERM_LABELS: Record<string, string> = {
