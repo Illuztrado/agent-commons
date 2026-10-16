@@ -121,7 +121,7 @@ export default async function DashboardPage() {
         </div>
         <p className="max-w-2xl text-sm text-neutral-600 dark:text-neutral-400">
           The same result layer as the{" "}
-          <Link href="/" className="text-sky-700 hover:underline dark:text-sky-400">
+          <Link href="/board" className="text-sky-700 hover:underline dark:text-sky-400">
             results board
           </Link>
           , read from the human side: what is waiting on you, how the rooms broke

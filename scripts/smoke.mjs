@@ -24,8 +24,9 @@ async function post(path, body) {
 
 const checks = [];
 
-// Board: outcomes render, and partial is never shown as full.
-const board = await get("/");
+// Board (now at /board, out of the menu): outcomes render, and partial is never shown as full.
+const board = await get("/board");
+const home = await get("/");
 checks.push(
   [board.includes("Agent Commons"), "board: product name renders", "Agent Commons"],
   [board.includes("results board"), "board: results board renders", "results board"],
@@ -36,11 +37,18 @@ checks.push(
 // The guide panel — the Gemini demonstration client on the judge click path.
 // It is a demo client, not the product core, and it must always say which path
 // answered. Read-only: every answer is grounded in the live board.
-checks.push([
-  board.includes("Ask the guide") && board.includes("demo client"),
-  "guide: the panel is on the board, labelled as a demo client",
-  "Ask the guide + demo client",
-]);
+checks.push(
+  [
+    home.includes("Ask about your deals") && home.includes("A demo client"),
+    "guide: the panel is on the overview, labelled as a demo client",
+    "Ask about your deals + demo client",
+  ],
+  [
+    home.includes("Overview") && home.includes("Both sides agreed") && home.includes("Confirm deal"),
+    "overview: the home page shows the funnel and the deal waiting for a human",
+    "Overview + funnel + Confirm deal",
+  ],
+);
 
 const guideProduct = await post("/api/guide", { question: "What is this product?" });
 const guideAnswer = typeof guideProduct.answer === "string" ? guideProduct.answer : "";
@@ -296,7 +304,7 @@ const open = await get("/room/room-northwind");
 const openHash = termsHashOf(open);
 checks.push(
   [
-    open.includes("Confirming as") && open.includes(">Confirm<"),
+    open.includes("Confirm deal"),
     "sign-off: a card at awaiting_signature offers the human a Confirm button",
     "Confirm",
   ],
@@ -344,10 +352,10 @@ checks.push(
     "sign-off: the page shows who confirmed it",
     "Confirmed by Judge",
   ],
-  [!closed.includes("Confirming as"), "sign-off: a closed card offers no second Confirm", "gone"],
+  [!closed.includes("Confirm deal"), "sign-off: a closed card offers no second Confirm", "gone"],
 );
 
-const boardAfter = await get("/");
+const boardAfter = await get("/board");
 checks.push(
   [boardAfter.includes("signed off"), "sign-off: the board row picks the state up from the transport", "signed off"],
   [boardAfter.includes("partial 1/2"), "sign-off: a human confirm never inflates agent agreement", "partial 1/2"],
@@ -370,7 +378,7 @@ const held = await get("/room/room-orion");
 const heldHash = termsHashOf(held);
 const noHumanStep = await postStatus("/api/sign-off", { room_id: "room-orion", hash: heldHash });
 checks.push(
-  [!held.includes("Confirming as"), "sign-off: an impasse card offers no Confirm button", "no affordance"],
+  [!held.includes("Confirm deal"), "sign-off: an impasse card offers no Confirm button", "no affordance"],
   [
     noHumanStep.status === 409,
     "sign-off: a card that never reached the human step cannot be closed",

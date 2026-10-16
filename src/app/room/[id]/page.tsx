@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { listRooms, readResultCards } from "@/lib/outcome-service";
 import { getSignOffTransport } from "@/lib/sign-off-transport";
 import { mergeResultCards } from "@/lib/result-card";
-import { canConfirm, cardStage, findSignOff } from "@/lib/human-signoff";
+import { canConfirm, cardStage, findSignOff, type HumanSignOff } from "@/lib/human-signoff";
 import { recomputeHash } from "@/lib/seed";
 import { assessCard, type AgentCard } from "@/lib/agent-card";
 import {
@@ -14,16 +14,58 @@ import {
   verifyEvidence,
 } from "@/lib/agent-card-demo";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
-import { SignOffPanel } from "@/components/sign-off-panel";
+import { agentName, buildOverview, readableTerms } from "@/lib/overview";
+import type { RoomSummary } from "@/lib/transport";
+import type { ResultCard } from "@/lib/result-card";
+import { confirmSignOff } from "./actions";
+import { cn } from "@/lib/utils";
 
 /**
- * Room page — the core screen.
+ * Deal page — one negotiation, read by a person.
  *
- * Result cards on the left; participants on the right. Verification is shown
- * claim-by-claim: evidence / self-reported / unverified / lapsed. There are no
- * bare booleans — a receiving agent (and the judge) sees exactly what is
- * checkable.
+ * Top: who the deal is with, the terms in plain words, where it stands, and the
+ * one action the person can take. Below, folded away, the proof for auditors:
+ * result cards with their recomputable hashes and each participant's claims,
+ * shown claim-by-claim (evidence / self-reported / unverified / lapsed) — never
+ * a bare boolean.
  */
+
+type Tone = "green" | "amber" | "red" | "neutral" | "blue";
+
+/** Where the deal stands, in one plain sentence. */
+function dealState(
+  room: RoomSummary,
+  cards: ResultCard[],
+  signOffs: HumanSignOff[],
+): { tone: Tone; label: string } {
+  const signed = cards.map((c) => findSignOff(signOffs, c)).find(Boolean);
+  if (signed) return { tone: "green", label: `Deal closed — signed off by ${signed.display_name}` };
+  switch (room.status) {
+    case "agreed":
+      return cards.some((c) => canConfirm(c, signOffs))
+        ? { tone: "amber", label: "Everyone agreed — waiting for your confirmation" }
+        : { tone: "green", label: "Everyone agreed" };
+    case "partial":
+      return {
+        tone: "blue",
+        label: `${room.agreed_parties} of ${room.required_parties} sides agreed — still waiting on the rest`,
+      };
+    case "impasse":
+      return { tone: "red", label: "No deal — the sides could not meet" };
+    case "no-match":
+      return { tone: "neutral", label: "Stopped before talks — failed the background check" };
+    default:
+      return { tone: "blue", label: "Agents are still negotiating" };
+  }
+}
+
+const STATE_STYLE: Record<Tone, string> = {
+  green: "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+  amber: "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300",
+  red: "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-300",
+  neutral: "border-neutral-300 bg-neutral-50 text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300",
+  blue: "border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300",
+};
 
 function cardsForRoom(roomId: string): AgentCard[] {
   if (roomId === "room-shell") return [demoBuyerCard(), demoFlaggedCard()];
@@ -57,6 +99,21 @@ export default async function RoomPage({
   // the next page load have to agree with what this page shows.
   const signOffs = await transport.listSignOffs();
 
+  // The buyer is the agent present in every procurement room; the deal is
+  // named after whoever sits across from them.
+  const allEntries = await Promise.all(
+    rooms.map(async (r) => ({ room: r, cards: mergeResultCards(await readResultCards(r.room_id)) })),
+  );
+  const { buyer } = buildOverview(allEntries, signOffs);
+  const others = room.participants.filter((p) => p !== buyer?.id).map(agentName);
+  const title =
+    buyer && others.length < room.participants.length
+      ? `Deal with ${others.join(", ")}`
+      : others.join(", ");
+  const state = dealState(room, merged, signOffs);
+  const primary = merged[0];
+  const pending = merged.find((c) => canConfirm(c, signOffs));
+
   const agentCards = cardsForRoom(id).map((card) => {
     const assessment = assessCard(card, verifyCard(card));
     // A receiver checks each evidence object against its stated issuer key.
@@ -72,29 +129,65 @@ export default async function RoomPage({
   );
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-6 py-12">
-      <div className="flex items-center gap-3 text-sm">
-        <Link href="/" className="text-sky-700 hover:underline dark:text-sky-400">
-          ← Results board
-        </Link>
-        <span className="text-neutral-400">/</span>
-        <span className="font-medium">{room.room_id}</span>
-      </div>
+    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-6 py-12">
+      <Link href="/" className="text-sm text-sky-700 hover:underline dark:text-sky-400">
+        ← Overview
+      </Link>
 
-      <header className="flex flex-col gap-2">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold tracking-tight">{room.room_id}</h1>
-          <Badge tone="neutral">{room.scenario}</Badge>
+      <header className="flex flex-col gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        <p className="text-base text-neutral-700 dark:text-neutral-300">{room.summary}</p>
+        <div className={cn("w-fit rounded-full border px-3 py-1 text-sm font-medium", STATE_STYLE[state.tone])}>
+          {state.label}
         </div>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">{room.summary}</p>
         {flagged && (
           <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-300">
-            Screening flag: a counterparty&apos;s card trips the synthetic list.
-            Negotiation is held until a human clears it.
+            Screening flag: this counterparty failed the background check. Talks are on
+            hold until a person clears it.
           </p>
         )}
       </header>
 
+      {primary && room.status !== "no-match" && (
+        <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
+          <div className="px-5 pt-4 text-xs font-medium uppercase tracking-wide text-neutral-500">
+            {room.status === "impasse" ? "Last offer on the table" : "Terms"}
+          </div>
+          <dl className="grid grid-cols-2 gap-4 p-5 sm:grid-cols-4">
+            {readableTerms(primary.terms).map((t) => (
+              <div key={t.label}>
+                <dt className="text-xs text-neutral-500">{t.label}</dt>
+                <dd className="text-lg font-semibold">{t.value}</dd>
+              </div>
+            ))}
+          </dl>
+          {pending && (
+            <form
+              action={confirmSignOff}
+              className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 bg-neutral-50 px-5 py-3 dark:border-neutral-800 dark:bg-neutral-900"
+            >
+              <input type="hidden" name="room_id" value={pending.room_id} />
+              <input type="hidden" name="hash" value={pending.hash} />
+              <span className="text-xs text-neutral-500">
+                Demo-level confirmation of these exact terms — no legal signature validity.
+              </span>
+              <button
+                type="submit"
+                className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
+              >
+                Confirm deal
+              </button>
+            </form>
+          )}
+        </div>
+      )}
+
+      <details className="group rounded-2xl border border-neutral-200 dark:border-neutral-800">
+        <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
+          Proof for auditors — signed result cards and agent checks
+          <span className="text-neutral-400 transition-transform group-open:rotate-90">›</span>
+        </summary>
+        <div className="border-t border-neutral-200 p-5 dark:border-neutral-800">
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <section className="flex flex-col gap-4 lg:col-span-2">
           <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
@@ -151,11 +244,7 @@ export default async function RoomPage({
                         <span className="font-mono">{signOff.signed_off_at}</span>. Demo-level
                         confirmation of these terms — no legal signature validity.
                       </p>
-                    ) : (
-                      canConfirm(card, signOffs) && (
-                        <SignOffPanel room_id={card.room_id} hash={card.hash} />
-                      )
-                    )}
+                    ) : null}
                   </div>
                 </CardContent>
               </Card>
@@ -232,6 +321,8 @@ export default async function RoomPage({
           </Card>
         </aside>
       </div>
+        </div>
+      </details>
     </main>
   );
 }

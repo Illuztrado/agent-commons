@@ -34,5 +34,5 @@ export async function confirmSignOff(formData: FormData): Promise<void> {
   revalidatePath(`/room/${roomId}`);
   revalidatePath("/");
   revalidatePath("/dashboard");
-  revalidatePath("/overview");
+  revalidatePath("/board");
 }

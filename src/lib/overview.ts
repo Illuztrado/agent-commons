@@ -87,7 +87,8 @@ export function funnelCounts(rooms: OverviewRoom[], signOffs: HumanSignOff[]): F
 /** `Northwind-Supply-Agent.demo` → `Northwind Supply`. */
 export function agentName(id: string): string {
   const base = id.replace(/\.demo$/, "").replace(/-Agent$/, "");
-  return base.replace(/[-_]+/g, " ").trim() || id;
+  const words = base.replace(/[-_]+/g, " ").trim().split(/\s+/).filter(Boolean);
+  return words.map((w) => w[0].toUpperCase() + w.slice(1)).join(" ") || id;
 }
 
 export function initials(name: string): string {

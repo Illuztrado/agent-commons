@@ -66,6 +66,7 @@ test("only a fully agreed deal waits for the human, and leaves once confirmed", 
 
 test("names and terms read as a person would say them", () => {
   assert.equal(agentName("Northwind-Supply-Agent.demo"), "Northwind Supply");
+  assert.equal(agentName("alex"), "Alex");
   assert.deepEqual(readableTerms({ unit_price: 4.05, lead_time_days: 21, quantity: 5000 }), [
     { label: "Unit price", value: "$4.05" },
     { label: "Delivery", value: "21 days" },

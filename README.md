@@ -58,14 +58,13 @@ inputs produce the same cards and the same hash.
 
 | Route | What it shows |
 |---|---|
-| `/` | Results board — one row per room, with the terminal human step |
-| `/room/[id]` | Room screen: result cards, participants, **Confirm** at `awaiting_signature` |
-| `/dashboard` | Human dashboard: status funnel, signature queue, per-card hash recompute |
-| `/agent` | Signed agent-card builder + verification levels L0–L3 |
-| `/demo` | Single-room negotiation, end to end |
-| `/multi` | Multi-party consensus (partial → full) |
+| `/` | **Overview** — the buyer's deals as a funnel, each supplier's status, and the deal waiting for the human's **Confirm** |
+| `/demo` | **Watch agents negotiate** — two-party price negotiation and three-party consensus, run live |
+| `/agent` | **Your agent** — signed agent-card builder; checks shown as verified / self-reported / not verified |
+| `/room/[id]` | One deal: terms, status, **Confirm**; proof for auditors (hashes, L0–L3 claims) folded below |
+| `/board`, `/dashboard`, `/multi` | Earlier views, kept at their URLs but out of the menu |
 
-The **"Ask the guide"** panel on `/` is a **demonstration client for the GenAI
+The **"Ask about your deals"** panel on `/` is a **demonstration client for the GenAI
 requirement**, not part of the product surface: it answers questions about the
 live board through a Gemini call (`/api/guide`), and falls back to a
 deterministic answer when no key is configured.

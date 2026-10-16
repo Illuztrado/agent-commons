@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
+import { Badge, Button } from "@/components/ui";
 
 interface ClaimAssessment {
   key: string;
@@ -36,6 +36,20 @@ const STATUS_TONE = {
   self_reported: "amber",
   unverified: "neutral",
 } as const;
+
+/** What each claim means to a person deciding whether to trust this agent. */
+const CLAIM_LABEL: Record<string, string> = {
+  key_control: "Messages are signed by this agent's key",
+  owner_binding: "Owner controls the contact address",
+  capability_probe: "Can actually do what it says",
+  screening: "Passed the background check",
+};
+
+const STATUS_WORD: Record<string, string> = {
+  evidence: "Verified",
+  self_reported: "Self-reported",
+  unverified: "Not verified",
+};
 
 function Field({
   label,
@@ -114,117 +128,106 @@ export default function AgentEditorPage() {
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-6 py-12">
       <header className="flex flex-col gap-2">
-        <h1 className="text-xl font-semibold tracking-tight">Agent card editor</h1>
-        <p className="max-w-2xl text-sm text-neutral-600 dark:text-neutral-400">
-          Configure your agent&apos;s card and sign it. Every claim comes back as
-          evidence, self-reported, or unverified — never a bare boolean. Claims you
-          do not back with evidence are marked unverified, not faked.
+        <h1 className="text-2xl font-semibold tracking-tight">Your agent</h1>
+        <p className="max-w-2xl text-base text-neutral-700 dark:text-neutral-300">
+          Agent card editor: describe the agent that negotiates for you. Other companies&apos;
+          agents read this card to decide whether to trust it — so every check shows
+          whether it is verified or just claimed.
         </p>
       </header>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Card details</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <Field label="Display name" value={displayName} onChange={setDisplayName} />
-            <Field label="Owner" value={ownerName} onChange={setOwnerName} />
-            <Field
-              label="Owner contact"
-              value={ownerContact}
-              onChange={setOwnerContact}
-              hint="Used for the owner-binding challenge — proves control of the contact, not company authority."
-            />
-            <Field
-              label="Capabilities (comma-separated)"
-              value={capabilities}
-              onChange={setCapabilities}
-            />
-            <Field
-              label="May disclose (this agent's own policy)"
-              value={mayDisclose}
-              onChange={setMayDisclose}
-            />
-            <Field
-              label="Must not disclose"
-              value={mustNot}
-              onChange={setMustNot}
-            />
+        <div className="flex flex-col gap-4 rounded-2xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-950">
+          <Field label="Agent name" value={displayName} onChange={setDisplayName} />
+          <Field label="Company" value={ownerName} onChange={setOwnerName} />
+          <Field label="Contact email" value={ownerContact} onChange={setOwnerContact} />
+          <Field
+            label="What it can do"
+            value={capabilities}
+            onChange={setCapabilities}
+            hint="Comma-separated, e.g. negotiate-price, verify-spec"
+          />
 
-            <div className="flex flex-col gap-2 text-sm">
-              <span className="font-medium text-neutral-700 dark:text-neutral-300">
-                Evidence-backed claims
-              </span>
-              {[
-                ["owner binding (L1)", ownerBinding, setOwnerBinding] as const,
-                ["capability probe (L2)", probe, setProbe] as const,
-                ["screening (L3)", screening, setScreening] as const,
-              ].map(([label, val, set]) => (
-                <label key={label} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={val}
-                    onChange={(e) => set(e.target.checked)}
-                    className="size-4"
-                  />
-                  <span className="text-neutral-600 dark:text-neutral-400">{label}</span>
-                </label>
-              ))}
+          <details className="rounded-lg border border-neutral-200 p-3 text-sm dark:border-neutral-800">
+            <summary className="cursor-pointer font-medium text-neutral-700 dark:text-neutral-300">
+              Advanced — privacy and checks
+            </summary>
+            <div className="mt-3 flex flex-col gap-3">
+              <Field
+                label="May share with other agents"
+                value={mayDisclose}
+                onChange={setMayDisclose}
+              />
+              <Field label="Must never share" value={mustNot} onChange={setMustNot} />
+              <div className="flex flex-col gap-2">
+                <span className="font-medium text-neutral-700 dark:text-neutral-300">
+                  Checks to back with evidence
+                </span>
+                {[
+                  ["Prove we own the contact address", ownerBinding, setOwnerBinding] as const,
+                  ["Test that it can do what it says", probe, setProbe] as const,
+                  ["Run a background check", screening, setScreening] as const,
+                ].map(([label, val, set]) => (
+                  <label key={label} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={val}
+                      onChange={(e) => set(e.target.checked)}
+                      className="size-4"
+                    />
+                    <span className="text-neutral-600 dark:text-neutral-400">{label}</span>
+                  </label>
+                ))}
+              </div>
             </div>
+          </details>
 
-            <Button onClick={build} disabled={loading}>
-              {loading ? "Signing…" : "Build & sign card"}
-            </Button>
-            {error && <p className="text-sm text-rose-600">{error}</p>}
-          </CardContent>
-        </Card>
+          <Button onClick={build} disabled={loading} className="py-2">
+            {loading ? "Creating…" : "Create agent card"}
+          </Button>
+          {error && <p className="text-sm text-rose-600">Couldn&apos;t create the card: {error}</p>}
+        </div>
 
         <div className="flex flex-col gap-4">
           {data ? (
-            <>
-              <Card>
-                <CardHeader className="flex-row items-center justify-between">
-                  <CardTitle className="text-sm">Assessment</CardTitle>
-                  <Badge tone="blue">{data.assessment.level}</Badge>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-2">
-                  <ul className="flex flex-col gap-1">
-                    {data.assessment.claims.map((c) => (
-                      <li key={c.key} className="flex items-center justify-between gap-2 text-xs">
-                        <span className="text-neutral-600 dark:text-neutral-400">
-                          <span className="font-mono text-[10px] text-neutral-400">{c.level}</span>{" "}
-                          {c.key}
-                        </span>
-                        <Badge tone={STATUS_TONE[c.status as keyof typeof STATUS_TONE] ?? "neutral"}>
-                          {c.label}
-                        </Badge>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="text-xs text-neutral-500">
-                    key authenticated: {String(data.assessment.keyAuthenticated)} · lapsed:{" "}
-                    {String(data.assessment.lapsed)}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Signed card (JSON)</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <pre className="max-h-96 overflow-auto rounded bg-neutral-100 p-3 text-[11px] leading-relaxed dark:bg-neutral-900">
-                    {JSON.stringify(data.card, null, 2)}
-                  </pre>
-                </CardContent>
-              </Card>
-            </>
+            <div className="flex flex-col gap-4 rounded-2xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-950">
+              <div className="flex items-center gap-3">
+                <div className="flex size-11 items-center justify-center rounded-full bg-sky-100 text-sm font-semibold text-sky-800 dark:bg-sky-950 dark:text-sky-300">
+                  {data.card.display_name.slice(0, 2).toUpperCase()}
+                </div>
+                <div>
+                  <div className="font-semibold">{data.card.display_name}</div>
+                  <div className="text-sm text-neutral-500">{data.card.owner.name}</div>
+                </div>
+              </div>
+              <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-900">
+                {data.assessment.claims.map((c) => (
+                  <li key={c.key} className="flex items-center justify-between gap-3 py-2 text-sm">
+                    <span className="text-neutral-700 dark:text-neutral-300">
+                      {CLAIM_LABEL[c.key] ?? c.key}
+                    </span>
+                    <Badge tone={STATUS_TONE[c.status as keyof typeof STATUS_TONE] ?? "neutral"}>
+                      {STATUS_WORD[c.status] ?? c.label}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+              <details className="text-xs text-neutral-500">
+                <summary className="cursor-pointer">Signed card (JSON)</summary>
+                <p className="mt-2">
+                  Trust level {data.assessment.level} · key authenticated:{" "}
+                  {String(data.assessment.keyAuthenticated)} · lapsed: {String(data.assessment.lapsed)}
+                </p>
+                <pre className="mt-2 max-h-96 overflow-auto rounded bg-neutral-100 p-3 text-[11px] leading-relaxed dark:bg-neutral-900">
+                  {JSON.stringify(data.card, null, 2)}
+                </pre>
+              </details>
+            </div>
           ) : (
-            <Card>
-              <CardContent className="pt-5 text-sm text-neutral-500">
-                Build a card to see its assessment and signed JSON.
-              </CardContent>
-            </Card>
+            <div className="rounded-2xl border border-dashed border-neutral-300 p-6 text-sm text-neutral-500 dark:border-neutral-700">
+              Fill in the details and press <span className="font-medium">Create agent card</span>{" "}
+              to see what other agents will see.
+            </div>
           )}
         </div>
       </div>
