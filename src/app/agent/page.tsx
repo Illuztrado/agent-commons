@@ -1,259 +1,89 @@
-"use client";
+import { listRooms, readResultCards } from "@/lib/outcome-service";
+import { mergeResultCards } from "@/lib/result-card";
+import { getSignOffTransport } from "@/lib/sign-off-transport";
+import { buildOverview } from "@/lib/overview";
+import { buyerTrust, counterpartyTrust } from "@/lib/agent-trust";
+import { TrustBadges, TrustLegend, TrustSummary } from "@/components/trust-badges";
+import { YourAgents, type AgentSummary } from "@/components/your-agents";
 
-import { useEffect, useState } from "react";
-import { Badge, Button } from "@/components/ui";
+/**
+ * Agents — yours, and the ones they negotiate with.
+ *
+ * Every agent shows its four trust checks as badges: verified, only claimed,
+ * or failed/expired. Counterparties that shared no card are shown as such,
+ * never given badges they did not earn.
+ */
 
-interface ClaimAssessment {
-  key: string;
-  level: string;
-  status: string;
-  label: string;
-}
+export const dynamic = "force-dynamic";
 
-interface Assessment {
-  level: string;
-  keyAuthenticated: boolean;
-  lapsed: boolean;
-  claims: ClaimAssessment[];
-}
-
-interface AgentCard {
-  agent_id: string;
-  display_name: string;
-  owner: { name: string; contact: string | null };
-  owner_policy: { may_disclose: string[]; must_not_disclose: string[] };
-  claims: Record<string, { status: string; note?: string }>;
-  sig: string;
-}
-
-interface CardResponse {
-  card: AgentCard;
-  assessment: Assessment;
-}
-
-const STATUS_TONE = {
-  evidence: "green",
-  self_reported: "amber",
-  unverified: "neutral",
-} as const;
-
-/** What each claim means to a person deciding whether to trust this agent. */
-const CLAIM_LABEL: Record<string, string> = {
-  key_control: "Messages are signed by this agent's key",
-  owner_binding: "Owner controls the contact address",
-  capability_probe: "Can actually do what it says",
-  screening: "Passed the background check",
-};
-
-const STATUS_WORD: Record<string, string> = {
-  evidence: "Verified",
-  self_reported: "Self-reported",
-  unverified: "Not verified",
-};
-
-function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-  hint,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  hint?: string;
-}) {
-  return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="font-medium text-neutral-700 dark:text-neutral-300">{label}</span>
-      <input
-        className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-      />
-      {hint && <span className="text-xs text-neutral-500">{hint}</span>}
-    </label>
+export default async function AgentsPage() {
+  const rooms = await listRooms();
+  const signOffs = await getSignOffTransport().listSignOffs();
+  const entries = await Promise.all(
+    rooms.map(async (room) => ({ room, cards: mergeResultCards(await readResultCards(room.room_id)) })),
   );
-}
+  const { suppliers } = buildOverview(entries, signOffs);
 
-async function requestCard(body: unknown): Promise<CardResponse> {
-  const res = await fetch("/api/agent-card", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return (await res.json()) as CardResponse;
-}
+  const buyer = buyerTrust();
+  const seeded: AgentSummary = {
+    id: "seeded-buyer",
+    name: buyer.name,
+    company: buyer.company,
+    role: `buying parts · negotiating with ${suppliers.length} companies`,
+    badges: buyer.badges,
+  };
 
-export default function AgentEditorPage() {
-  const [displayName, setDisplayName] = useState("Acme Buyer Agent");
-  const [ownerName, setOwnerName] = useState("Acme Corp");
-  const [ownerContact, setOwnerContact] = useState("procurement@acme.example");
-  const [capabilities, setCapabilities] = useState("negotiate-price, verify-spec");
-  const [mayDisclose, setMayDisclose] = useState("spec, quantity, target-price-range");
-  const [mustNot, setMustNot] = useState("walk-away-price, internal-cost-basis");
-  const [ownerBinding, setOwnerBinding] = useState(true);
-  const [probe, setProbe] = useState(true);
-  const [screening, setScreening] = useState(true);
-
-  const [data, setData] = useState<CardResponse | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const split = (s: string) =>
-    s
-      .split(",")
-      .map((x) => x.trim())
-      .filter(Boolean);
-
-  const currentBody = () => ({
-    display_name: displayName,
-    owner_name: ownerName,
-    owner_contact: ownerContact,
-    capabilities: split(capabilities),
-    may_disclose: split(mayDisclose),
-    must_not_disclose: split(mustNot),
-    levels: { owner_binding: ownerBinding, capability_probe: probe, screening },
-  });
-
-  async function build() {
-    setLoading(true);
-    setError(null);
-    try {
-      setData(await requestCard(currentBody()));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Show the agent's current profile straight away; editing is the exception.
-  const [initialBody] = useState(currentBody);
-  useEffect(() => {
-    requestCard(initialBody)
-      .then(setData)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
-  }, [initialBody]);
+  const counterparts = suppliers.map((s) => ({ supplier: s, trust: counterpartyTrust(s.roomId) }));
 
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-6 py-12">
+    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-10 px-6 py-12">
       <header className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">Agent profile</h1>
-          <Button variant={editing ? "ghost" : "default"} onClick={() => setEditing((v) => !v)}>
-            {editing ? "Close editor" : "Edit profile"}
-          </Button>
-        </div>
+        <h1 className="text-2xl font-semibold tracking-tight">Agents</h1>
         <p className="max-w-2xl text-base text-neutral-700 dark:text-neutral-300">
-          The agent that negotiates for you, as other companies&apos; agents see it. Before
-          talking, they read this profile to decide whether to trust it — so every check
-          shows whether it is verified or only claimed.
+          The agents that negotiate for you, and the ones they negotiate with. Before talking,
+          agents check each other&apos;s badges to decide whether to trust each other.
         </p>
       </header>
 
-      <div className={editing ? "grid grid-cols-1 gap-6 lg:grid-cols-2" : "flex flex-col"}>
-        {editing && (
-        <div className="flex flex-col gap-4 rounded-2xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-950">
-          <Field label="Agent name" value={displayName} onChange={setDisplayName} />
-          <Field label="Company" value={ownerName} onChange={setOwnerName} />
-          <Field label="Contact email" value={ownerContact} onChange={setOwnerContact} />
-          <Field
-            label="What it can do"
-            value={capabilities}
-            onChange={setCapabilities}
-            hint="Comma-separated, e.g. negotiate-price, verify-spec"
-          />
+      <YourAgents seeded={seeded} />
 
-          <details className="rounded-lg border border-neutral-200 p-3 text-sm dark:border-neutral-800">
-            <summary className="cursor-pointer font-medium text-neutral-700 dark:text-neutral-300">
-              Advanced — privacy and checks
-            </summary>
-            <div className="mt-3 flex flex-col gap-3">
-              <Field
-                label="May share with other agents"
-                value={mayDisclose}
-                onChange={setMayDisclose}
-              />
-              <Field label="Must never share" value={mustNot} onChange={setMustNot} />
-              <div className="flex flex-col gap-2">
-                <span className="font-medium text-neutral-700 dark:text-neutral-300">
-                  Checks to back with evidence
+      <section className="flex flex-col gap-3">
+        <h2 className="text-base font-semibold tracking-tight">
+          Agents you&apos;re negotiating with{" "}
+          <span className="font-normal text-neutral-500">· {counterparts.length}</span>
+        </h2>
+        <div className="divide-y divide-neutral-200 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-950">
+          {counterparts.map(({ supplier, trust }) => (
+            <div key={supplier.roomId} className="flex flex-wrap items-center gap-3 px-4 py-3">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-semibold text-neutral-600 dark:bg-neutral-900 dark:text-neutral-400">
+                {supplier.initials}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium">{trust?.name ?? `${supplier.name} agent`}</div>
+                <div className="text-xs text-neutral-500">{supplier.name}</div>
+              </div>
+              {trust ? (
+                <div className="flex flex-col items-end gap-1">
+                  <TrustBadges badges={trust.badges} />
+                  <span className="text-xs">
+                    <TrustSummary badges={trust.badges} />
+                    {trust.lapsed && <span className="text-rose-600"> · profile expired</span>}
+                  </span>
+                </div>
+              ) : (
+                <span className="rounded-full border border-dashed border-neutral-300 px-2.5 py-0.5 text-xs text-neutral-500 dark:border-neutral-700">
+                  Profile not shared
                 </span>
-                {[
-                  ["Prove we own the contact address", ownerBinding, setOwnerBinding] as const,
-                  ["Test that it can do what it says", probe, setProbe] as const,
-                  ["Run a background check", screening, setScreening] as const,
-                ].map(([label, val, set]) => (
-                  <label key={label} className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={val}
-                      onChange={(e) => set(e.target.checked)}
-                      className="size-4"
-                    />
-                    <span className="text-neutral-600 dark:text-neutral-400">{label}</span>
-                  </label>
-                ))}
-              </div>
+              )}
             </div>
-          </details>
-
-          <span className="text-xs text-neutral-500">Agent card editor — the profile is signed when saved.</span>
-          <Button onClick={build} disabled={loading} className="py-2">
-            {loading ? "Saving…" : "Save and sign profile"}
-          </Button>
-          {error && <p className="text-sm text-rose-600">Couldn&apos;t save the profile: {error}</p>}
+          ))}
         </div>
-        )}
+      </section>
 
-        <div className="flex flex-col gap-4">
-          {data ? (
-            <div className="flex flex-col gap-4 rounded-2xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-950">
-              <div className="flex items-center gap-3">
-                <div className="flex size-11 items-center justify-center rounded-full bg-sky-100 text-sm font-semibold text-sky-800 dark:bg-sky-950 dark:text-sky-300">
-                  {data.card.display_name.slice(0, 2).toUpperCase()}
-                </div>
-                <div>
-                  <div className="font-semibold">{data.card.display_name}</div>
-                  <div className="text-sm text-neutral-500">{data.card.owner.name}</div>
-                </div>
-              </div>
-              <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-900">
-                {data.assessment.claims.map((c) => (
-                  <li key={c.key} className="flex items-center justify-between gap-3 py-2 text-sm">
-                    <span className="text-neutral-700 dark:text-neutral-300">
-                      {CLAIM_LABEL[c.key] ?? c.key}
-                    </span>
-                    <Badge tone={STATUS_TONE[c.status as keyof typeof STATUS_TONE] ?? "neutral"}>
-                      {STATUS_WORD[c.status] ?? c.label}
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
-              <details className="text-xs text-neutral-500">
-                <summary className="cursor-pointer">Signed card (JSON)</summary>
-                <p className="mt-2">
-                  Trust level {data.assessment.level} · key authenticated:{" "}
-                  {String(data.assessment.keyAuthenticated)} · lapsed: {String(data.assessment.lapsed)}
-                </p>
-                <pre className="mt-2 max-h-96 overflow-auto rounded bg-neutral-100 p-3 text-[11px] leading-relaxed dark:bg-neutral-900">
-                  {JSON.stringify(data.card, null, 2)}
-                </pre>
-              </details>
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-neutral-300 p-6 text-sm text-neutral-500 dark:border-neutral-700">
-              {loading ? "Loading your agent's profile…" : "No profile yet — press Edit profile to create one."}
-            </div>
-          )}
-        </div>
-      </div>
+      <section className="rounded-2xl border border-neutral-200 p-5 dark:border-neutral-800">
+        <h2 className="mb-3 text-sm font-semibold">What the badges mean</h2>
+        <TrustLegend />
+      </section>
     </main>
   );
 }

@@ -5,14 +5,9 @@ import { getSignOffTransport } from "@/lib/sign-off-transport";
 import { mergeResultCards } from "@/lib/result-card";
 import { canConfirm, cardStage, findSignOff, type HumanSignOff } from "@/lib/human-signoff";
 import { recomputeHash } from "@/lib/seed";
-import { assessCard, type AgentCard } from "@/lib/agent-card";
-import {
-  demoBuyerCard,
-  demoExpiredCard,
-  demoFlaggedCard,
-  verifyCard,
-  verifyEvidence,
-} from "@/lib/agent-card-demo";
+import { assessCard } from "@/lib/agent-card";
+import { verifyCard, verifyEvidence } from "@/lib/agent-card-demo";
+import { cardsForRoom } from "@/lib/agent-trust";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { agentName, buildOverview, readableTerms } from "@/lib/overview";
 import type { RoomSummary } from "@/lib/transport";
@@ -66,12 +61,6 @@ const STATE_STYLE: Record<Tone, string> = {
   neutral: "border-neutral-300 bg-neutral-50 text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300",
   blue: "border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300",
 };
-
-function cardsForRoom(roomId: string): AgentCard[] {
-  if (roomId === "room-shell") return [demoBuyerCard(), demoFlaggedCard()];
-  if (roomId === "room-northwind") return [demoBuyerCard(), demoExpiredCard()];
-  return [demoBuyerCard()];
-}
 
 const STATUS_TONE = {
   evidence: "green",

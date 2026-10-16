@@ -136,9 +136,11 @@ checks.push([demo.includes("Live negotiation"), "demo: live negotiation page ren
 // Agent card editor + builder.
 const agentPage = await get("/agent");
 checks.push([
-  agentPage.includes("Agent profile") && agentPage.includes("Edit profile"),
-  "agent: profile page renders with its editor one click away",
-  "Agent profile + Edit profile",
+  agentPage.includes("Your agents") &&
+    agentPage.includes("Create agent") &&
+    agentPage.includes("Profile not shared"),
+  "agents: your agents, the create button and counterparties' badges render",
+  "Your agents + Create agent + Profile not shared",
 ]);
 
 const built = await post("/api/agent-card", {

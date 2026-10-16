@@ -12,6 +12,9 @@ import {
 } from "@/lib/overview";
 import { confirmSignOff } from "@/app/room/[id]/actions";
 import { GuidePanel } from "@/components/guide-panel";
+import { TrustBadges } from "@/components/trust-badges";
+import { counterpartyTrust } from "@/lib/agent-trust";
+import type { TrustBadge } from "@/lib/trust-badges";
 import { DATA_PROVENANCE } from "@/lib/scenarios";
 import { cn } from "@/lib/utils";
 
@@ -84,7 +87,11 @@ export default async function OverviewPage() {
         </div>
         <div className="divide-y divide-neutral-200 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-950">
           {suppliers.map((s) => (
-            <SupplierRow key={s.roomId} supplier={s} />
+            <SupplierRow
+              key={s.roomId}
+              supplier={s}
+              badges={counterpartyTrust(s.roomId)?.badges ?? null}
+            />
           ))}
         </div>
       </section>
@@ -239,7 +246,7 @@ const DOT_TONE: Record<SupplierTone, string> = {
   blocked: "bg-neutral-400",
 };
 
-function SupplierRow({ supplier: s }: { supplier: SupplierView }) {
+function SupplierRow({ supplier: s, badges }: { supplier: SupplierView; badges: TrustBadge[] | null }) {
   const showTerms = s.dropped !== "check" && s.terms.length > 0;
   return (
     <details className="group">
@@ -253,6 +260,13 @@ function SupplierRow({ supplier: s }: { supplier: SupplierView }) {
           {s.initials}
         </div>
         <span className="min-w-0 flex-1 truncate font-medium">{s.name}</span>
+        <span className="hidden sm:block">
+          {badges ? (
+            <TrustBadges badges={badges} compact />
+          ) : (
+            <span className="text-[11px] text-neutral-400">no profile</span>
+          )}
+        </span>
         <span className="flex shrink-0 items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
           <span className={cn("size-2 rounded-full", DOT_TONE[s.tone])} />
           {s.status}

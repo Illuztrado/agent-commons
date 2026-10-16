@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
  */
 const LINKS = [
   { href: "/", label: "Overview" },
-  { href: "/agent", label: "Agent profile" },
+  { href: "/agent", label: "Agents" },
 ];
 
 export function SiteNav() {
