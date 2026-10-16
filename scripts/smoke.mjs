@@ -33,6 +33,48 @@ checks.push(
   [board.includes("impasse"), "board: impasse is a first-class result", "impasse"],
 );
 
+// The guide panel — the Gemini demonstration client on the judge click path.
+// It is a demo client, not the product core, and it must always say which path
+// answered. Read-only: every answer is grounded in the live board.
+checks.push([
+  board.includes("Ask the guide") && board.includes("demo client"),
+  "guide: the panel is on the board, labelled as a demo client",
+  "Ask the guide + demo client",
+]);
+
+const guideProduct = await post("/api/guide", { question: "What is this product?" });
+const guideAnswer = typeof guideProduct.answer === "string" ? guideProduct.answer : "";
+checks.push(
+  [
+    guideProduct.role === "demo-assistant" &&
+      guideAnswer.length > 0 &&
+      ["gemini", "deterministic-fallback"].includes(guideProduct.source),
+    "guide: answers a question and labels its source honestly",
+    `source=${guideProduct.source}`,
+  ],
+  [
+    typeof guideProduct.grounded === "string" &&
+      guideProduct.grounded.includes("room-northwind") &&
+      guideProduct.grounded.includes("room-weekend"),
+    "guide: the answer is grounded in the live board",
+    "live rooms in context",
+  ],
+);
+
+// verify_terms recomputes a real card's hash from its terms alone — the
+// "machine-recomputable" claim, exercised where a judge can see it.
+const guideVerify = await post("/api/guide", {
+  terms: { spec: "A-100", quantity: 5000, unit_price: 4.05, lead_time_days: 21 },
+});
+checks.push([
+  guideVerify.tool === "verify_terms" &&
+    String(guideVerify.result).includes(
+      "sha256:1e252cc8c7bbe8b262e5b9a7f143d8b2eeb87a3c669f82c7a7eed60758a0591e",
+    ),
+  "guide: verify_terms recomputes room-northwind's hash from terms alone",
+  "sha256:1e252cc8…",
+]);
+
 // Room: independent hash verification + claim-by-claim verification labels.
 const room = await get("/room/room-northwind");
 checks.push(
