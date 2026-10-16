@@ -12,6 +12,7 @@ import { confirmSignOff } from "@/app/room/[id]/actions";
 import { GuidePanel } from "@/components/guide-panel";
 import { DealFunnel } from "@/components/deal-funnel";
 import { counterpartyTrust } from "@/lib/agent-trust";
+import { conversationUrl } from "@/lib/conversation-links";
 import { trustWarning } from "@/lib/trust-badges";
 import { TrustWarning } from "@/components/trust-warning";
 import { DATA_PROVENANCE } from "@/lib/scenarios";
@@ -37,6 +38,7 @@ export default async function OverviewPage() {
   const { buyer, suppliers, pending } = buildOverview(entries, signOffs);
   const stages = funnelStages(suppliers);
   const trusts = Object.fromEntries(suppliers.map((s) => [s.roomId, counterpartyTrust(s.roomId)]));
+  const links = Object.fromEntries(suppliers.map((s) => [s.roomId, conversationUrl(s.roomId)]));
   const waitingValue = pending.reduce(
     (sum, d) => sum + (suppliers.find((s) => s.roomId === d.room.room_id)?.value ?? 0),
     0,
@@ -72,7 +74,7 @@ export default async function OverviewPage() {
 
       <section className="flex flex-col gap-3">
         <h2 className="text-base font-semibold tracking-tight">How the deals are going</h2>
-        <DealFunnel stages={stages} suppliers={suppliers} trusts={trusts} />
+        <DealFunnel stages={stages} suppliers={suppliers} trusts={trusts} links={links} />
       </section>
 
       <section>

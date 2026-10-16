@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { FunnelStage, SupplierTone, SupplierView } from "@/lib/overview";
+import { ExternalLink } from "lucide-react";
+import type { FunnelStage, HistoryStep, SupplierTone, SupplierView } from "@/lib/overview";
 import type { AgentTrust } from "@/lib/agent-trust";
 import { TrustBadges, TrustSummary } from "@/components/trust-badges";
 import { cn } from "@/lib/utils";
@@ -48,10 +49,12 @@ export function DealFunnel({
   stages,
   suppliers,
   trusts,
+  links,
 }: {
   stages: FunnelStage[];
   suppliers: SupplierView[];
   trusts: Record<string, AgentTrust | null>;
+  links: Record<string, string | null>;
 }) {
   const [filter, setFilter] = useState<Filter>(null);
 
@@ -216,7 +219,12 @@ export function DealFunnel({
         </div>
         <div className="divide-y divide-neutral-200 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-950">
           {shown.map((s) => (
-            <SupplierRow key={s.roomId} supplier={s} trust={trusts[s.roomId] ?? null} />
+            <SupplierRow
+              key={s.roomId}
+              supplier={s}
+              trust={trusts[s.roomId] ?? null}
+              link={links[s.roomId] ?? null}
+            />
           ))}
           {shown.length === 0 && (
             <div className="p-6 text-center text-sm text-neutral-500">
@@ -247,7 +255,62 @@ const DOT_TONE: Record<SupplierTone, string> = {
   blocked: "bg-neutral-400",
 };
 
-function SupplierRow({ supplier: s, trust }: { supplier: SupplierView; trust: AgentTrust | null }) {
+const STEP_DOT: Record<HistoryStep["tone"], string> = {
+  neutral: "border-neutral-400 bg-white dark:bg-neutral-900",
+  good: "border-emerald-500 bg-emerald-500",
+  bad: "border-rose-500 bg-rose-500",
+  pending: "border-amber-500 bg-white dark:bg-neutral-900",
+};
+
+function History({ steps, link }: { steps: HistoryStep[]; link: string | null }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">History</span>
+        {link ? (
+          <a
+            href={link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1 text-xs font-medium hover:bg-white dark:border-neutral-700 dark:hover:bg-neutral-800"
+          >
+            Open conversation <ExternalLink className="size-3" aria-hidden="true" />
+          </a>
+        ) : (
+          <span className="text-xs text-neutral-400">The agents&apos; conversation isn&apos;t linked</span>
+        )}
+      </div>
+      <ol className="flex flex-col">
+        {steps.map((step, i) => (
+          <li key={i} className="relative flex gap-3 pb-2 last:pb-0">
+            {i < steps.length - 1 && (
+              <span className="absolute left-[4.5px] top-3 h-full w-px bg-neutral-300 dark:bg-neutral-700" />
+            )}
+            <span className={cn("relative mt-1.5 size-2.5 shrink-0 rounded-full border-2", STEP_DOT[step.tone])} />
+            <span
+              className={cn(
+                "text-sm",
+                step.tone === "pending" ? "text-amber-700 dark:text-amber-400" : "text-neutral-700 dark:text-neutral-300",
+              )}
+            >
+              {step.text}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function SupplierRow({
+  supplier: s,
+  trust,
+  link,
+}: {
+  supplier: SupplierView;
+  trust: AgentTrust | null;
+  link: string | null;
+}) {
   const showTerms = s.dropped !== "check" && s.terms.length > 0;
   return (
     <details className="group">
@@ -280,8 +343,8 @@ function SupplierRow({ supplier: s, trust }: { supplier: SupplierView; trust: Ag
         <span className="text-neutral-400 transition-transform group-open:rotate-90">›</span>
       </summary>
       <div className="flex flex-col gap-3 bg-neutral-50 px-4 pb-4 pl-16 pt-1 dark:bg-neutral-900">
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">{s.summary}</p>
-        <div className="flex flex-wrap items-center gap-2 text-sm">
+        <History steps={s.history} link={link} />
+        <div className="flex flex-wrap items-center gap-2 border-t border-neutral-200 pt-3 text-sm dark:border-neutral-800">
           <span className="text-neutral-500">Their agent:</span>
           {trust ? (
             <>

@@ -46,6 +46,13 @@ export interface SupplierView {
   reached: number;
   /** Order value from the terms (quantity × unit price), or null if unpriced. */
   value: number | null;
+  /** What happened in this deal, step by step, from the cards and sign-offs. */
+  history: HistoryStep[];
+}
+
+export interface HistoryStep {
+  text: string;
+  tone: "neutral" | "good" | "bad" | "pending";
 }
 
 export interface FunnelStage {
@@ -146,6 +153,60 @@ function supplierStatus(
   }
 }
 
+/**
+ * The deal's history as plain steps. Built only from what the result layer
+ * records — who posted which outcome, who agreed, and the human sign-off — so
+ * it never invents a conversation; the agents' messages themselves live in
+ * their own channel.
+ */
+export function dealHistory(
+  { room, cards }: OverviewRoom,
+  supplierName: string,
+  buyerId: string | null,
+  signOffs: HumanSignOff[],
+): HistoryStep[] {
+  const who = (id: string) => (id === buyerId ? `Your agent (${agentName(id)})` : agentName(id));
+  const steps: HistoryStep[] = [{ text: `Your agent opened talks with ${supplierName}`, tone: "neutral" }];
+
+  if (room.status === "no-match") {
+    steps.push({ text: `Background check flagged ${supplierName} — talks stopped before any offer`, tone: "bad" });
+    return steps;
+  }
+  steps.push({ text: `${supplierName} passed the background check`, tone: "good" });
+
+  const card = cards[0];
+  if (!card) {
+    steps.push({ text: "Agents are still exchanging offers", tone: "pending" });
+    return steps;
+  }
+  if (card.status === "impasse") {
+    steps.push({ text: `No deal: ${card.summary}`, tone: "bad" });
+    return steps;
+  }
+  // Who agreed first, then who is still out — the order things happened in.
+  const parties = [...card.required_parties].sort(
+    (a, b) => Number(card.agreed_by.includes(b)) - Number(card.agreed_by.includes(a)),
+  );
+  for (const party of parties) {
+    steps.push(
+      card.agreed_by.includes(party)
+        ? { text: `${who(party)} agreed to the terms`, tone: "good" }
+        : { text: `${who(party)} hasn't agreed yet`, tone: "pending" },
+    );
+  }
+  const signOff = cards.map((c) => findSignOff(signOffs, c)).find(Boolean);
+  if (signOff) {
+    const when = new Date(signOff.signed_off_at).toLocaleString("en-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+    steps.push({ text: `${signOff.display_name} confirmed the deal · ${when}`, tone: "good" });
+  } else if (cards.some((c) => c.agreement === "full" && canConfirm(c, signOffs))) {
+    steps.push({ text: "Waiting for your confirmation", tone: "pending" });
+  }
+  return steps;
+}
+
 const TONE_ORDER: Record<SupplierTone, number> = {
   you: 0,
   waiting: 1,
@@ -173,6 +234,7 @@ export function buildOverview(allRooms: OverviewRoom[], signOffs: HumanSignOff[]
     const card = entry.cards[0];
     const confirmed = isConfirmed(entry.cards, signOffs);
     suppliers.push({
+      history: dealHistory(entry, name, buyerId, signOffs),
       reached: confirmed ? 4 : FUNNEL_REACHED[entry.room.status],
       value: card ? orderValue(card.terms) : null,
       id,

@@ -88,3 +88,17 @@ test("each funnel stage carries its order value and pass-through rate", async ()
     ],
   );
 });
+
+test("a deal's history is built from outcomes and sign-offs, never a transcript", async () => {
+  const { suppliers } = buildOverview(await seedRooms(), []);
+  const history = (name: string) =>
+    suppliers.find((s) => s.name === name)!.history.map((h) => h.text);
+  assert.deepEqual(history("Delta Parts"), [
+    "Your agent opened talks with Delta Parts",
+    "Delta Parts passed the background check",
+    "Delta Parts agreed to the terms",
+    "Your agent (Acme Buyer) hasn't agreed yet",
+  ]);
+  assert.match(history("Shell Co")[1], /Background check flagged Shell Co/);
+  assert.equal(history("Northwind Supply").at(-1), "Waiting for your confirmation");
+});
