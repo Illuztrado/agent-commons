@@ -1,0 +1,23 @@
+# Uploaded by `gcloud run deploy --source .`.
+#
+# Kept explicit rather than left to the .gitignore fallback so that a local
+# .env.local can never be part of a source upload, and so the upload stays
+# small: the image builds from package.json + package-lock.json and the source
+# tree, nothing else.
+node_modules
+.next
+out
+build
+coverage
+.git
+.gcloudignore
+.dockerignore
+.env
+.env.*
+!.env.example
+.tmp-tests
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store
+*.pem
+npm-debug.log*
