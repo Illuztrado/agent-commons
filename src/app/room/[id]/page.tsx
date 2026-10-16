@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getTransport } from "@/lib/transport-factory";
+import { listRooms, readResultCards } from "@/lib/outcome-service";
 import { getSignOffTransport } from "@/lib/sign-off-transport";
 import { mergeResultCards } from "@/lib/result-card";
 import { canConfirm, cardStage, findSignOff } from "@/lib/human-signoff";
@@ -44,11 +44,14 @@ export default async function RoomPage({
 }) {
   const { id } = await params;
   const transport = getSignOffTransport();
-  const rooms = await transport.listRooms();
+  // Read through the product's read capabilities, so a card posted over the MCP
+  // gate is on this page exactly like a seeded one. The human step below is
+  // still read from the sign-off transport, which owns it.
+  const rooms = await listRooms();
   const room = rooms.find((r) => r.room_id === id);
   if (!room) notFound();
 
-  const cards = await transport.listResultCards(id);
+  const cards = await readResultCards(id);
   const merged = mergeResultCards(cards);
   // Read from the transport, never from a copy kept on the page: the board and
   // the next page load have to agree with what this page shows.

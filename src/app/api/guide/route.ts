@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { getTransport } from "@/lib/transport-factory";
+import { listRooms, readResultCards, verifyTerms } from "@/lib/outcome-service";
 import type { RoomSummary } from "@/lib/transport";
-import { termsHash } from "@/lib/canonical";
 import { hasGeminiKey, generateText } from "@/lib/gemini";
 
 /**
@@ -47,14 +46,15 @@ interface Grounding {
 }
 
 async function ground(question: string, roomId?: string): Promise<Grounding> {
-  const transport = getTransport();
-  const rooms = await transport.listRooms();
+  // The board is read through the one definition of the product's read
+  // capabilities, so the guide and the MCP gate cannot drift apart.
+  const rooms = await listRooms();
   // Pick a focus room: explicit room_id, else a room id mentioned in the question.
   const mentioned = rooms.find((r) => question.toLowerCase().includes(r.room_id));
   const focus = roomId
     ? rooms.find((r) => r.room_id === roomId) ?? mentioned
     : mentioned;
-  const focusCards = focus ? await transport.listResultCards(focus.room_id) : undefined;
+  const focusCards = focus ? await readResultCards(focus.room_id) : undefined;
   return { rooms, focusRoom: focus, focusCards };
 }
 
@@ -115,9 +115,14 @@ function deterministicAnswer(question: string, g: Grounding): string | null {
   return null;
 }
 
-function verifyTermsTool(terms: Record<string, unknown>): string {
-  const hash = termsHash(terms);
-  return `Recomputed hash from terms alone: ${hash}`;
+async function verifyTermsTool(terms: Record<string, unknown>): Promise<string> {
+  // The recomputation itself lives in the one place that defines it, so the
+  // guide and the MCP gate cannot disagree about what a hash is.
+  const { hash, matches } = await verifyTerms(terms);
+  const onBoard = matches.length === 0
+    ? "No card on the board currently carries this hash."
+    : `Cards on the board with this hash: ${matches.map((m) => `${m.room_id} (${m.author})`).join(", ")}.`;
+  return `Recomputed hash from terms alone: ${hash}\n${onBoard}`;
 }
 
 export async function POST(request: Request) {
@@ -135,7 +140,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       role: "demo-assistant",
       tool: "verify_terms",
-      result: verifyTermsTool(body.terms as Record<string, unknown>),
+      result: await verifyTermsTool(body.terms as Record<string, unknown>),
       source: "deterministic",
     });
   }

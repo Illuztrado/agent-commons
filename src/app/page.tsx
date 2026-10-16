@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { type RoomStatus } from "@/lib/transport";
-import { getTransport } from "@/lib/transport-factory";
+import { listRooms, readResultCards } from "@/lib/outcome-service";
 import { getSignOffTransport, roomStage } from "@/lib/sign-off-transport";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { GuidePanel } from "@/components/guide-panel";
@@ -48,7 +48,11 @@ function statusLabel(status: RoomStatus, required: number, agreed: number): stri
 
 export default async function BoardPage() {
   const transport = getSignOffTransport();
-  const rooms = await transport.listRooms();
+  // Rooms and cards come from the product's read capabilities, so a card posted
+  // over the MCP gate shows up on this board exactly like a seeded one — the
+  // board is the same view either way. The human step stays on the sign-off
+  // transport, which owns it.
+  const rooms = await listRooms();
   const signOffs = await transport.listSignOffs();
   const scenarioCount = SCENARIOS.length;
 
@@ -56,7 +60,7 @@ export default async function BoardPage() {
   // derivation the room page uses, so the two views cannot disagree.
   const stageByRoom = new Map<string, string | null>();
   for (const room of rooms) {
-    const cards = await transport.listResultCards(room.room_id);
+    const cards = await readResultCards(room.room_id);
     stageByRoom.set(room.room_id, roomStage(cards, signOffs));
   }
 

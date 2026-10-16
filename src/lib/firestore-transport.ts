@@ -304,6 +304,44 @@ export class FirestoreTransport implements Transport {
   }
 
   /**
+   * Store one result card, and make its room visible on the board.
+   *
+   * This is the write path for an external agent (see `ingest-transport.ts`):
+   * the card lands on the same deterministic `card__<room>__<author>__<hash>`
+   * document the seed writes, so re-posting the same card over the same terms
+   * is one row, not two. The room row is created the same way `send()` creates
+   * one, so a room nobody has posted into never appears.
+   *
+   * The card is validated before it gets here — schema, hash and issuer
+   * signature (see `outcome-service.ts`). This layer stores what it is given.
+   */
+  async putResultCard(roomId: string, card: ResultCard): Promise<void> {
+    await this.ensureSeeded();
+    const now = new Date().toISOString();
+    const cardRef = this.col().doc(cardDocId(card));
+    const roomRef = this.col().doc(roomDocId(roomId));
+
+    await this.db.runTransaction(async (tx) => {
+      const existing = await tx.get(roomRef);
+      const head = existing.exists ? (existing.data() as RoomRow) : null;
+      tx.set(cardRef, cardRow(card, now));
+      tx.set(
+        roomRef,
+        {
+          kind: "room",
+          room_id: roomId,
+          scenario: head?.scenario ?? card.scenario,
+          scenario_label: head?.scenario_label ?? card.scenario,
+          participants: head?.participants ?? card.participants,
+          summary: head?.summary ?? card.summary,
+          updated_at: now,
+        } satisfies RoomRow,
+        { merge: true },
+      );
+    });
+  }
+
+  /**
    * Post a message body into the room and make the room visible on the board.
    *
    * The body is stored verbatim. This transport does not parse result cards

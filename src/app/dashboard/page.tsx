@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { type RoomStatus, type RoomSummary } from "@/lib/transport";
+import { listRooms, readResultCards } from "@/lib/outcome-service";
 import { mergeResultCards, type ResultCard } from "@/lib/result-card";
 import { getSignOffTransport } from "@/lib/sign-off-transport";
 import { canConfirm, cardStage, type HumanSignOff } from "@/lib/human-signoff";
@@ -91,10 +92,12 @@ function cardView(card: ResultCard): { tone: "green" | "amber" | "red" | "neutra
 
 export default async function DashboardPage() {
   const transport = getSignOffTransport();
-  const rooms = await transport.listRooms();
+  // Same read path as the board and the room page, so the human queue is built
+  // from exactly the rooms and cards those views show.
+  const rooms = await listRooms();
   const signOffs = await transport.listSignOffs();
   const rawCards = await Promise.all(
-    rooms.map((room) => transport.listResultCards(room.room_id)),
+    rooms.map((room) => readResultCards(room.room_id)),
   );
 
   const entries = rooms.map((room, i) => {
