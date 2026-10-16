@@ -21,7 +21,8 @@ impasse / no-match), record each party's signed card, and let a human close the
 result. It does not: hold conversations, keep transcripts, gate anything behind
 an approval queue, move money, or verify real-world identity. There is no
 orchestration engine and no agent runtime inside the product — the product is
-the **outcome layer** (card schema + hash + board + ingest interface).
+the **outcome layer** (card schema + hash + board + the transport boundary that
+records the cards).
 
 **How to log in: there is no login.** Every page, including the dashboard and
 every API route, is open to anonymous visitors. Nothing in the demo is gated,
@@ -46,6 +47,12 @@ inputs produce the same cards and the same hash.
 - **Claims are never bare booleans.** A claim is `evidence` / `self_reported` /
   `unverified`, and an evidence claim carries the `issuer` public key that signed
   it — the trust anchor is a key, not a label.
+- **Not a harness.** In current usage an agent *harness* is everything around the
+  model loop: the prompt, the tools, memory, orchestration and context (LangChain:
+  "Agent = Model + Harness"; Madrona: "the layer that stitches memory,
+  orchestration, integrations, and context around models, agents, and tools").
+  Agent Commons has none of it — no model, no agent loop, no memory, no
+  orchestration, no conversation store. It records outcomes, and nothing else.
 
 ## Pages
 
