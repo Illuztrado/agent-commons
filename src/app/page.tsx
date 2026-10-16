@@ -12,9 +12,8 @@ import {
 } from "@/lib/overview";
 import { confirmSignOff } from "@/app/room/[id]/actions";
 import { GuidePanel } from "@/components/guide-panel";
-import { TrustBadges } from "@/components/trust-badges";
-import { counterpartyTrust } from "@/lib/agent-trust";
-import type { TrustBadge } from "@/lib/trust-badges";
+import { TrustBadges, TrustSummary } from "@/components/trust-badges";
+import { counterpartyTrust, type AgentTrust } from "@/lib/agent-trust";
 import { DATA_PROVENANCE } from "@/lib/scenarios";
 import { cn } from "@/lib/utils";
 
@@ -83,14 +82,14 @@ export default async function OverviewPage() {
           <h2 className="text-base font-semibold tracking-tight">
             Companies your agent is negotiating with
           </h2>
-          <span className="text-xs text-neutral-500">Click a company for details</span>
+          <span className="text-xs text-neutral-500">Click a company to see its agent and terms</span>
         </div>
         <div className="divide-y divide-neutral-200 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-950">
           {suppliers.map((s) => (
             <SupplierRow
               key={s.roomId}
               supplier={s}
-              badges={counterpartyTrust(s.roomId)?.badges ?? null}
+              trust={counterpartyTrust(s.roomId)}
             />
           ))}
         </div>
@@ -246,7 +245,7 @@ const DOT_TONE: Record<SupplierTone, string> = {
   blocked: "bg-neutral-400",
 };
 
-function SupplierRow({ supplier: s, badges }: { supplier: SupplierView; badges: TrustBadge[] | null }) {
+function SupplierRow({ supplier: s, trust }: { supplier: SupplierView; trust: AgentTrust | null }) {
   const showTerms = s.dropped !== "check" && s.terms.length > 0;
   return (
     <details className="group">
@@ -261,8 +260,8 @@ function SupplierRow({ supplier: s, badges }: { supplier: SupplierView; badges: 
         </div>
         <span className="min-w-0 flex-1 truncate font-medium">{s.name}</span>
         <span className="hidden sm:block">
-          {badges ? (
-            <TrustBadges badges={badges} compact />
+          {trust ? (
+            <TrustBadges badges={trust.badges} compact />
           ) : (
             <span className="text-[11px] text-neutral-400">no profile</span>
           )}
@@ -275,6 +274,19 @@ function SupplierRow({ supplier: s, badges }: { supplier: SupplierView; badges: 
       </summary>
       <div className="flex flex-col gap-3 bg-neutral-50 px-4 pb-4 pl-16 pt-1 dark:bg-neutral-900">
         <p className="text-sm text-neutral-600 dark:text-neutral-400">{s.summary}</p>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-neutral-500">Their agent:</span>
+          {trust ? (
+            <>
+              <span className="font-medium">{trust.name}</span>
+              <TrustBadges badges={trust.badges} />
+              <TrustSummary badges={trust.badges} />
+              {trust.lapsed && <span className="text-xs text-rose-600">profile expired</span>}
+            </>
+          ) : (
+            <span className="text-neutral-500">profile not shared</span>
+          )}
+        </div>
         {showTerms && (
           <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {s.terms.map((t) => (
