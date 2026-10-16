@@ -387,6 +387,114 @@ checks.push([
   "2 of 6 rooms",
 ]);
 
+// ---------------------------------------------------------------------------
+// The MCP gate (WS-14) — the product's one external entry point. Runs last: it
+// reads a card that is genuinely on the board, and nothing above may have its
+// room counts perturbed by a write from here.
+// ---------------------------------------------------------------------------
+
+/** One JSON-RPC call to the gate. It answers as SSE, so unwrap the `data:` line. */
+async function mcp(method, params) {
+  const res = await fetch(`${base}/mcp`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, ...(params ? { params } : {}) }),
+  });
+  const text = await res.text();
+  const data = text.split("\n").find((l) => l.startsWith("data: "));
+  return { status: res.status, json: data ? JSON.parse(data.slice(6)) : null };
+}
+
+const tools = await mcp("tools/list");
+const toolNames = (tools.json?.result?.tools ?? []).map((t) => t.name).sort();
+checks.push([
+  JSON.stringify(toolNames) ===
+    JSON.stringify(["list_rooms", "post_result_card", "read_result_cards", "verify_terms"]),
+  "gate: exactly the four outcome tools — and no message channel",
+  toolNames.join(", "),
+]);
+
+const preflight = await fetch(`${base}/mcp`, { method: "OPTIONS" });
+checks.push([
+  preflight.status === 204 &&
+    (preflight.headers.get("access-control-allow-methods") ?? "").includes("POST") &&
+    (preflight.headers.get("access-control-expose-headers") ?? "").includes("mcp-session-id"),
+  "gate: a browser client can preflight it, and read the protocol headers back",
+  "204 + allow-methods + expose-headers",
+]);
+
+// Tamper with a card that is really on the board: the schema gate is not what is
+// under test, so everything but the tampered field has to be genuine.
+const readCards = await mcp("tools/call", {
+  name: "read_result_cards",
+  arguments: { room_id: "room-northwind" },
+});
+const onBoard = JSON.parse(readCards.json?.result?.content?.[0]?.text ?? "{}").cards?.[0];
+
+const forgedHash = await mcp("tools/call", {
+  name: "post_result_card",
+  arguments: { card: { ...onBoard, hash: `sha256:${"0".repeat(64)}` } },
+});
+checks.push([
+  forgedHash.json?.result?.isError === true &&
+    JSON.stringify(forgedHash.json.result).includes("does not match"),
+  "gate: a card whose terms do not hash to the hash it carries is refused",
+  "rejected at the hash gate",
+]);
+
+const forgedSig = await mcp("tools/call", {
+  name: "post_result_card",
+  arguments: { card: { ...onBoard, sig: "AAAA" } },
+});
+checks.push([
+  forgedSig.json?.result?.isError === true &&
+    JSON.stringify(forgedSig.json.result).includes("does not verify"),
+  "gate: a signature that does not verify against the issuer key is refused",
+  "rejected at the signature gate",
+]);
+
+// ---------------------------------------------------------------------------
+// The issuer key directory (WS-15): a verifier fetches a key here and checks a
+// card without trusting this deployment. Read-only.
+// ---------------------------------------------------------------------------
+const keyDirRes = await fetch(`${base}/.well-known/agent-commons-keys`);
+const keyDir = await keyDirRes.json().catch(() => ({}));
+checks.push([
+  keyDirRes.status === 200 && Array.isArray(keyDir.keys) && (keyDir.issuers ?? []).length > 0,
+  "keys: the directory answers, and lists the issuers on the board",
+  `${keyDir.keys?.length ?? "?"} keys / ${keyDir.issuers?.length ?? "?"} issuers`,
+]);
+
+// ---------------------------------------------------------------------------
+// The VC 2.0-shaped export (WS-16): read-only, shaped as documented, and it
+// claims nothing it cannot back — no proof, no status, no validity window.
+// ---------------------------------------------------------------------------
+const vcRes = await fetch(`${base}/api/result-card/${encodeURIComponent(openHash)}/vc`);
+const vc = await vcRes.json().catch(() => ({}));
+checks.push([
+  vcRes.status === 200 &&
+    JSON.stringify(Object.keys(vc).sort()) ===
+      JSON.stringify(["@context", "credentialSubject", "issuer", "sig", "type"]) &&
+    vc["@context"]?.[0] === "https://www.w3.org/ns/credentials/v2" &&
+    (vc.type ?? []).includes("VerifiableCredential") &&
+    vc.credentialSubject?.hash === openHash &&
+    !["proof", "credentialStatus", "validFrom", "credentialSchema", "evidence"].some((k) => k in vc),
+  "vc: VC 2.0-shaped, keeps the hash, and claims nothing it cannot back",
+  Object.keys(vc).sort().join(", "),
+]);
+
+const vcUnknown = await fetch(`${base}/api/result-card/sha256:${"0".repeat(64)}/vc`);
+const vcPost = await fetch(`${base}/api/result-card/${encodeURIComponent(openHash)}/vc`, {
+  method: "POST",
+});
+checks.push(
+  [vcUnknown.status === 404, "vc: an unknown hash is a 404, not an empty credential", "404"],
+  [vcPost.status === 405, "vc: the export is read-only", "405"],
+);
+
 let failed = 0;
 for (const [ok, label, needle] of checks) {
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}  (${JSON.stringify(needle)})`);
