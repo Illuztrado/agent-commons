@@ -68,6 +68,22 @@ echo "== 4. deploy =="
 # --allow-unauthenticated  the organisers require judges to open the link directly
 # --max-instances 1        sign-off history is still process memory; see runbook
 # TRANSPORT=firestore      otherwise Firestore is installed, not used
+#
+# GEMINI_API_KEY is optional and read from the caller's environment, so the key
+# never has to be pasted into a command line or typed into a console. Without it
+# the guide answers from the deterministic fallback and labels itself as such.
+#
+# --set-env-vars REPLACES the whole set: anything set by hand in the console is
+# wiped by the next deploy. This script is the single source of truth for env,
+# which is exactly why the key has to be carried here rather than bolted on.
+ENV_VARS="TRANSPORT=firestore,FIRESTORE_PROJECT_ID=${PROJECT},FIRESTORE_COLLECTION=agent_commons"
+if [[ -n "${GEMINI_API_KEY:-}" ]]; then
+  ENV_VARS="${ENV_VARS},GEMINI_API_KEY=${GEMINI_API_KEY}"
+  echo "GEMINI_API_KEY: present, will be set on the service"
+else
+  echo "GEMINI_API_KEY: not set — the guide will answer from the deterministic fallback"
+fi
+
 "$GCLOUD" run deploy "$SERVICE" \
   --source . \
   --project "$PROJECT" \
@@ -77,7 +93,7 @@ echo "== 4. deploy =="
   --memory 1Gi \
   --cpu 1 \
   --max-instances 1 \
-  --set-env-vars "TRANSPORT=firestore,FIRESTORE_PROJECT_ID=${PROJECT},FIRESTORE_COLLECTION=agent_commons" \
+  --set-env-vars "$ENV_VARS" \
   --quiet
 
 echo "== 5. url =="
