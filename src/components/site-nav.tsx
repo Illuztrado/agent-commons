@@ -5,13 +5,15 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 /**
- * The two places a person needs: their deals and their own agent. The live
+ * The two places a person needs: their deals and their own agent — plus the one
+ * place a developer needs, the gate an outside agent posts through. The live
  * demo opens from a floating button instead; older views (results board,
  * dashboard, multi-party, /demo) still answer at their URLs.
  */
 const LINKS = [
   { href: "/", label: "Overview" },
   { href: "/agent", label: "Agents" },
+  { href: "/integrate", label: "Integrate" },
 ];
 
 export function SiteNav() {

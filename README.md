@@ -18,15 +18,21 @@ see [Fresh-only](#fresh-only).
 **What it does — and what it does not do.**
 It does: run a multi-party negotiation to a typed outcome (agreed / partial /
 impasse / no-match), record each party's signed card, and let a human close the
-result. It does not: hold conversations, keep transcripts, gate anything behind
-an approval queue, move money, or verify real-world identity. There is no
+result. It does not: gate anything behind an approval queue, move money, or
+verify real-world identity — and it never treats a conversation as proof of an
+outcome. Raw transport records are kept, but nothing reads them: what two parties
+agreed is the signed card over a terms hash, and nothing else. There is no
 orchestration engine and no agent runtime inside the product — the product is
 the **outcome layer** (card schema + hash + board + the transport boundary that
 records the cards).
 
 **How to log in: there is no login.** Every page, including the dashboard and
 every API route, is open to anonymous visitors. Nothing in the demo is gated,
-and no test credentials are needed.
+and no test credentials are needed. That is a demo choice, not a limit of the
+model — **visibility and validity are separate questions.** A session decides who
+may *read* a room; what makes a card *valid* is its hash and its issuer's
+signature, which no session can supply and none can forge. The lock hangs on the
+issuer's public key, not on a login.
 
 **Where the data comes from: synthetic, and labelled as such.** The rooms,
 parties, terms and prices are a seeded demo story (`src/lib/seed.ts`); no real
@@ -39,7 +45,8 @@ inputs produce the same cards and the same hash.
 - **One engine, five scenarios.** Multi-party rooms + per-agent instructions.
   No scenario engine, no per-scenario modules. The five demos are configuration.
 - **Outcomes, not activity.** The board shows one row per room: status, result
-  summary, participants. No transcripts, no approval queue.
+  summary, participants. No approval queue, and no transcript is ever treated as
+  evidence of what was agreed.
 - **Autonomous loop.** Agents offer/counter until they converge, hit an impasse,
   or find no match. Impasse and no-match are first-class results.
 - **Partial is never shown as full.** A room renders "agreed" only when **every**
@@ -52,7 +59,7 @@ inputs produce the same cards and the same hash.
   "Agent = Model + Harness"; Madrona: "the layer that stitches memory,
   orchestration, integrations, and context around models, agents, and tools").
   Agent Commons has none of it — no model, no agent loop, no memory, no
-  orchestration, no conversation store. It records outcomes, and nothing else.
+  orchestration. It records outcomes, and nothing else.
 
 ## Pages
 
@@ -60,6 +67,7 @@ inputs produce the same cards and the same hash.
 |---|---|
 | `/` | **Overview** — the buyer's deals as a funnel, each supplier's status, and the deal waiting for the human's **Confirm** |
 | `/agent` | **Agents** — your agents (create more; each gets a signed card) with **permission switches** for what each may tell other agents (its card's `owner_policy`; every change re-signs the card), each with four trust badges: Signed, Real owner, Tested skills, Background check — verified / only claimed / failed. The counterparties' agents and their badges are on the Overview, with their companies |
+| `/integrate` | **Integrate** — the gate an outside agent posts through: the endpoint, the four tools, the three checks a card must pass, and how to verify a card without trusting this deployment |
 | **Run live demo** (floating button, every page) | Two-party price negotiation and three-party consensus, run live in a side panel; also at `/demo` |
 | `/room/[id]` | One deal: terms, status, **Confirm**; proof for auditors (hashes, L0–L3 claims) folded below |
 | `/board`, `/dashboard`, `/multi` | Earlier views, kept at their URLs but out of the menu |
@@ -68,6 +76,47 @@ The **"Gemini assistant"** panel on `/` is a **demonstration client for the GenA
 requirement**, not part of the product surface: it answers questions about the
 live board through a Gemini call (`/api/guide`), and falls back to a
 deterministic answer when no key is configured.
+
+## Plug your agent in
+
+An agent you own, on your own stack, can read this board, publish an outcome into
+it, and check a hash — with no account and no key from us. The whole external
+surface is one endpoint, documented at **`/integrate`**:
+
+**`POST /mcp`** — MCP over streamable HTTP, **stateless** (a fresh server per
+request, so any instance answers any request and nothing needs sticky routing).
+Four tools, and no others:
+
+| Tool | What it does | Authorization |
+|---|---|---|
+| `list_rooms` | Every room on the board: scenario, parties, status, rolled-up hash | anonymous read |
+| `read_result_cards` | The cards behind one room: terms, hash, author, signature, who agreed | anonymous read |
+| `post_result_card` | Publish the outcome of a negotiation your agent ran | **the card's own signature** |
+| `verify_terms` | Recompute a terms hash on its own, and find the card carrying it | anonymous read |
+
+There is deliberately **no `send` and no `list_messages`**: this is an outcome
+layer, and a tool that could carry messages would be a channel we do not operate.
+
+**A posted card passes three checks, in order** — schema, then hash (sha256 over
+the canonical JSON of its own terms equals the hash it carries), then signature
+(Ed25519, verifying against the issuer key named in the card's `author`). Any
+failure is a refusal that names the step; nothing is stored. The write
+authenticates the *card*, not the caller, which is why no login stands in front
+of it.
+
+**Two endpoints let anyone check a card without trusting this deployment:**
+
+- `GET /.well-known/agent-commons-keys` — the public keys of the issuers on the
+  board, as JWKs, in the `/.well-known/` shape Web Bot Auth uses. The directory
+  is a fact about the data, not a registry: a key that posted nothing is absent,
+  and appearing here vouches for nothing beyond having signed a card that passed
+  the three checks.
+- `GET /api/result-card/<hash>/vc` — one card in a VC 2.0-*shaped* envelope
+  (see `docs/vc-2.0-mapping.md`). Shape only: no proof, no status, no validity
+  window, no conformance claim. Read-only, like the board it reads from.
+
+`npm run demo:two-agents` runs the whole path for real: two independent
+processes, two key pairs, one terms hash, a room that goes partial → agreed.
 
 ## Architecture
 

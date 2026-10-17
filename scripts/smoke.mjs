@@ -434,6 +434,19 @@ checks.push([
   "204 + allow-methods + expose-headers",
 ]);
 
+// The gate has to be findable, not just present: a reader who never learns that
+// /mcp exists cannot score the one thing that makes this an outcome layer rather
+// than a dashboard. The page states the endpoint and the tool set it serves.
+const integrate = await get("/integrate");
+checks.push([
+  integrate.includes("POST /mcp") &&
+    integrate.includes("post_result_card") &&
+    integrate.includes("agent-commons-keys") &&
+    integrate.includes("No login"),
+  "gate: the entry point is reachable from the UI, and names the endpoint and its tools",
+  "/integrate + POST /mcp + 4 tools + key directory",
+]);
+
 // Tamper with a card that is really on the board: the schema gate is not what is
 // under test, so everything but the tampered field has to be genuine.
 const readCards = await mcp("tools/call", {
@@ -441,6 +454,32 @@ const readCards = await mcp("tools/call", {
   arguments: { room_id: "room-northwind" },
 });
 const onBoard = JSON.parse(readCards.json?.result?.content?.[0]?.text ?? "{}").cards?.[0];
+
+// The happy path, from outside: an anonymous caller reads the board through the
+// gate and gets the same rooms the board renders. Everything above and below
+// tests refusals, which would all pass if the gate served nobody.
+const listed = await mcp("tools/call", { name: "list_rooms", arguments: {} });
+const listedRooms = JSON.parse(listed.json?.result?.content?.[0]?.text ?? "{}").rooms ?? [];
+checks.push([
+  listed.json?.result?.isError !== true &&
+    listedRooms.some((r) => r.room_id === "room-northwind") &&
+    listedRooms.every((r) => typeof r.status === "string"),
+  "gate: an anonymous caller lists the board through the gate and gets the board's rooms",
+  `${listedRooms.length} rooms via the gate`,
+]);
+
+// And can check a hash without trusting us: verify_terms recomputes it from the
+// terms alone, so the card we just read has to come back under its own hash.
+const verified = await mcp("tools/call", {
+  name: "verify_terms",
+  arguments: { terms: onBoard?.terms },
+});
+const verifyText = verified.json?.result?.content?.[0]?.text ?? "";
+checks.push([
+  verifyText.includes(onBoard?.hash ?? "\u0000") && verifyText.includes("room-northwind"),
+  "gate: verify_terms recomputes a card's hash from its terms and finds that card",
+  "hash recomputed, card found",
+]);
 
 const forgedHash = await mcp("tools/call", {
   name: "post_result_card",
