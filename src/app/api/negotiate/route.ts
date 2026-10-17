@@ -13,8 +13,8 @@ import { negotiateToResultCard, type Party } from "@/lib/negotiation";
  */
 
 const DEFAULT_BUYER: Party = {
-  id: "acme-buyer.demo",
-  display_name: "Acme Buyer Agent",
+  id: "harbourline-buyer.demo",
+  display_name: "Harbourline Sourcing Agent",
   role: "buyer",
   reservation: 4.8,
   policy: {
@@ -55,9 +55,11 @@ export async function POST(request: Request) {
       seller,
       maxRounds: (body.maxRounds as number) ?? 6,
       baseFields: (body.baseFields as Record<string, unknown>) ?? {
-        spec: "A-100",
-        quantity: 5000,
+        spec: "HBR-VAC-750",
+        quantity: 12000,
       },
+      // The card names the key that signs it, so the signature is checkable.
+      author: keys.publicKeyRaw,
     },
     (value) => signValue(value, keys.privateKey),
   );

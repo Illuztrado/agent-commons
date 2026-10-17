@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { SEED_CARDS } from "../src/lib/seed";
+import { mergeResultCards } from "../src/lib/result-card";
 import {
   buildSignOff,
   canConfirm,
@@ -18,10 +19,16 @@ import {
  * fixtures, so they fail if the seeded story stops exercising this path.
  */
 
+/**
+ * The room's card, merged the way the product merges it. A room can hold more
+ * than one card — where two sides agreed, each posted its own — and it is the
+ * merged row the pages and the sign-off step actually operate on.
+ */
 function card(roomId: string) {
-  const found = SEED_CARDS.find((c) => c.room_id === roomId);
-  if (!found) throw new Error(`seed card missing for ${roomId}`);
-  return found;
+  const cards = SEED_CARDS.filter((c) => c.room_id === roomId);
+  const [merged] = mergeResultCards(cards);
+  if (!merged) throw new Error(`seed card missing for ${roomId}`);
+  return merged;
 }
 
 test("a result card that stops at awaiting_signature is where the human enters", () => {

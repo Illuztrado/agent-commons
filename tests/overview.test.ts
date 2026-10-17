@@ -24,7 +24,7 @@ async function seedRooms() {
 
 test("the overview tells the procurement story only, from the buyer's side", async () => {
   const { buyer, suppliers } = buildOverview(await seedRooms(), []);
-  assert.equal(buyer?.name, "Acme Buyer");
+  assert.equal(buyer?.name, "Harbourline Sourcing");
   assert.deepEqual(
     suppliers.map((s) => s.name).sort(),
     ["Delta Parts", "Northwind Supply", "Orion Components", "Shell Co", "Vega Metals"],
@@ -57,7 +57,7 @@ test("only a fully agreed deal waits for the human, and leaves once confirmed", 
   assert.deepEqual(before.pending.map((p) => p.supplier), ["Northwind Supply"]);
   assert.equal(before.suppliers[0].status, "Deal agreed · waiting for you");
 
-  const card = SEED_CARDS.find((c) => c.room_id === "room-northwind")!;
+  const card = mergeResultCards(SEED_CARDS.filter((c) => c.room_id === "room-northwind"))[0];
   const after = buildOverview(rooms, [buildSignOff({ card })]);
   assert.equal(after.pending.length, 0);
   assert.equal(after.funnel.confirmed, 1);
@@ -80,10 +80,10 @@ test("each funnel stage carries its order value and pass-through rate", async ()
   assert.deepEqual(
     stages.map((s) => [s.count, s.value, s.pct]),
     [
-      [5, 39290, null],
-      [4, 39290, 80],
-      [2, 31530, 50],
-      [1, 20250, 50],
+      [5, 110575, null],
+      [4, 110575, 80],
+      [2, 71000, 50],
+      [1, 46200, 50],
       [0, 0, 0],
     ],
   );
@@ -97,7 +97,7 @@ test("a deal's history is built from outcomes and sign-offs, never a transcript"
     "Your agent opened talks with Delta Parts",
     "Delta Parts passed the background check",
     "Delta Parts agreed to the terms",
-    "Your agent (Acme Buyer) hasn't agreed yet",
+    "Your agent (Harbourline Sourcing) hasn't agreed yet",
   ]);
   assert.match(history("Shell Co")[1], /Background check flagged Shell Co/);
   assert.equal(history("Northwind Supply").at(-1), "Waiting for your confirmation");

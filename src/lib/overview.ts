@@ -292,6 +292,8 @@ const TERM_LABELS: Record<string, string> = {
   quantity: "Quantity",
   unit_price: "Unit price",
   lead_time_days: "Delivery",
+  incoterms: "Incoterms",
+  payment_terms: "Payment",
 };
 
 /** Card terms as a person reads them: labelled, with units. */

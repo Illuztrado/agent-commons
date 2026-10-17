@@ -1,17 +1,21 @@
 import { assessCard, type AgentCard } from "./agent-card";
-import { demoBuyerCard, demoExpiredCard, demoFlaggedCard, verifyCard } from "./agent-card-demo";
+import { demoBuyerCard, supplierCard, SUPPLIER_ROOMS, verifyCard } from "./agent-card-demo";
 import { trustBadges, type TrustBadge } from "./trust-badges";
 
 /**
  * Seeded agent cards and their trust badges (server only — card signatures are
- * checked with node:crypto). In the demo story only some counterparties share
- * a card; the rest are honestly shown as "profile not shared".
+ * checked with node:crypto).
+ *
+ * Every counterparty in the procurement story shares a card, so a badge is
+ * shown for each one rather than a "profile not shared" placeholder. Two of
+ * them are deliberately imperfect and say so: Northwind's authority claims have
+ * lapsed, and Shell Co's screening check matched. A room outside that story —
+ * the multi-party picnic — has no counterparty profile to show.
  */
 
 /** Agent cards presented in a room, buyer first — the same set the room page shows. */
 export function cardsForRoom(roomId: string): AgentCard[] {
-  if (roomId === "room-shell") return [demoBuyerCard(), demoFlaggedCard()];
-  if (roomId === "room-northwind") return [demoBuyerCard(), demoExpiredCard()];
+  if (SUPPLIER_ROOMS.includes(roomId)) return [demoBuyerCard(), supplierCard(roomId)];
   return [demoBuyerCard()];
 }
 

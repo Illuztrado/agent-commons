@@ -38,8 +38,20 @@ test("an expired card keeps its signature but loses every authority check", () =
   });
 });
 
-test("a counterparty that shared no card gets no badges", () => {
-  assert.equal(counterpartyTrust("room-delta"), null);
+test("every counterparty in the procurement story shares a card", () => {
+  for (const roomId of [
+    "room-northwind",
+    "room-delta",
+    "room-orion",
+    "room-vega",
+    "room-shell",
+  ]) {
+    assert.ok(counterpartyTrust(roomId), `${roomId} should have a counterparty profile`);
+  }
+});
+
+test("a room outside the procurement story has no counterparty card to show", () => {
+  assert.equal(counterpartyTrust("room-weekend"), null);
 });
 
 test("unclaimed checks read as missing, not as verified", () => {

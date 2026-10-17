@@ -278,9 +278,9 @@ export function YourAgents({ seeded }: { seeded: AgentSummary }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [name, setName] = useState("Acme Logistics Agent");
+  const [name, setName] = useState("Harbourline Freight Agent");
   const [company, setCompany] = useState(seeded.company);
-  const [contact, setContact] = useState("logistics@acme.example");
+  const [contact, setContact] = useState("freight@harbourline.example");
   const [skills, setSkills] = useState("book-freight, compare-quotes");
   const [policy, setPolicy] = useState<SharingPolicy>({
     may: ["spec", "quantity", "delivery-window"],

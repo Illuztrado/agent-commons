@@ -49,8 +49,9 @@ export default async function OverviewPage() {
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
         <p className="max-w-2xl text-base text-neutral-700 dark:text-neutral-300">
-          Your buying agent{buyer ? ` (${buyer.name})` : ""} is negotiating with{" "}
-          {suppliers.length} suppliers for parts orders. Here&apos;s where each one stands.
+          Your buying agent{buyer ? ` (${buyer.name})` : ""} is sourcing{" "}
+          {suppliers.length} product lines for the spring range. Here&apos;s where each supplier
+          stands.
         </p>
         {pending.length > 0 && (
           <p className="text-sm font-medium text-amber-700 dark:text-amber-400">

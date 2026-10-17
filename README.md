@@ -34,11 +34,20 @@ may *read* a room; what makes a card *valid* is its hash and its issuer's
 signature, which no session can supply and none can forge. The lock hangs on the
 issuer's public key, not on a login.
 
-**Where the data comes from: synthetic, and labelled as such.** The rooms,
-parties, terms and prices are a seeded demo story (`src/lib/seed.ts`); no real
-company data is used. The UI carries a provenance line on the board, the
-dashboard and the demo page. The negotiation loop is deterministic — the same
-inputs produce the same cards and the same hash.
+**Where the data comes from: synthetic, and labelled as such.** One sourcing
+round for a fictional homeware retailer ahead of a spring launch — five
+suppliers, five different outcomes, and real-shaped figures throughout: SKUs,
+quantities, unit prices, incoterms, payment terms and lead times. No real
+company data is used, and the UI carries a provenance line on the board, the
+dashboard and the demo page.
+
+The seeded cards are **genuinely signed**, not decorated. A card's `author` is
+its issuer's Ed25519 public key — the same key that appears as `agent_id` on
+that agent's card — and the signature verifies against it. Where two sides
+agreed there are two cards over one terms hash, each claiming only its own
+author's agreement, so a room reads `agreed` because the product unions them and
+not because one side wrote down both. The negotiation loop is deterministic: the
+same inputs produce the same terms hash.
 
 ## What this is (and is not)
 
@@ -194,6 +203,12 @@ Secret Manager, and Firestore credentials come from the runtime service account.
 - A result card's hash proves *content equality*; acceptance is each required
   party's signed card over that hash. No legal validity is claimed, and the
   Confirm button says so.
+- A verifying signature proves the card was signed by the key it names and has
+  not been altered since. It does **not** prove the issuer is who they claim to
+  be — that is a separate question, answered by fetching the same key from the
+  issuer's published directory. A card that verifies against a key it supplied
+  itself is self-consistency, not identity, and the deal page does not describe
+  it as more.
 - Instructions limiting disclosure are a **demo-tested behavior**, not an
   enforced confidentiality guarantee.
 - Sign-off history lives in the server process, not in Firestore: a confirmation

@@ -5,6 +5,7 @@ import { getSignOffTransport } from "@/lib/sign-off-transport";
 import { mergeResultCards } from "@/lib/result-card";
 import { canConfirm, cardStage, findSignOff, type HumanSignOff } from "@/lib/human-signoff";
 import { recomputeHash } from "@/lib/seed";
+import { signatureLabel, signatureSummary, signatureTone } from "@/lib/card-signature";
 import { assessCard } from "@/lib/agent-card";
 import { verifyCard, verifyEvidence } from "@/lib/agent-card-demo";
 import { cardsForRoom, counterpartyTrust } from "@/lib/agent-trust";
@@ -190,6 +191,9 @@ export default async function RoomPage({
           {merged.map((card) => {
             const recomputed = recomputeHash(card);
             const hashOk = recomputed === card.hash;
+            // The signature belongs to each card as posted, not to this merged
+            // row — the merge unions `agreed_by`, which no issuer ever signed.
+            const signatures = signatureSummary(cards.filter((c) => c.hash === card.hash));
             const stage = cardStage(card, signOffs);
             const signOff = findSignOff(signOffs, card);
             return (
@@ -202,9 +206,12 @@ export default async function RoomPage({
                       {card.required_parties.length})
                     </span>
                   </CardTitle>
-                  <Badge tone={hashOk ? "green" : "red"}>
-                    {hashOk ? "hash recomputes" : "hash mismatch"}
-                  </Badge>
+                  <span className="flex shrink-0 gap-2">
+                    <Badge tone={hashOk ? "green" : "red"}>
+                      {hashOk ? "hash recomputes" : "hash mismatch"}
+                    </Badge>
+                    <Badge tone={signatureTone(signatures)}>{signatureLabel(signatures)}</Badge>
+                  </span>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
                   <p className="text-sm text-neutral-700 dark:text-neutral-300">{card.summary}</p>

@@ -70,23 +70,35 @@ checks.push(
 );
 
 // verify_terms recomputes a real card's hash from its terms alone — the
-// "machine-recomputable" claim, exercised where a judge can see it.
+// "machine-recomputable" claim, exercised where a judge can see it. The terms
+// below are the seeded deal's own and the expected hash is read off the room
+// page rather than hardcoded, so this survives a change to the demo data.
+const room = await get("/room/room-northwind");
+const northwindHash = termsHashOf(room);
 const guideVerify = await post("/api/guide", {
-  terms: { spec: "A-100", quantity: 5000, unit_price: 4.05, lead_time_days: 21 },
+  terms: {
+    spec: "HBR-VAC-750",
+    quantity: 12000,
+    unit_price: 3.85,
+    incoterms: "FOB Haiphong",
+    payment_terms: "30% deposit, 70% on B/L",
+    lead_time_days: 45,
+  },
 });
 checks.push([
-  guideVerify.tool === "verify_terms" &&
-    String(guideVerify.result).includes(
-      "sha256:1e252cc8c7bbe8b262e5b9a7f143d8b2eeb87a3c669f82c7a7eed60758a0591e",
-    ),
+  guideVerify.tool === "verify_terms" && String(guideVerify.result).includes(northwindHash),
   "guide: verify_terms recomputes room-northwind's hash from terms alone",
-  "sha256:1e252cc8…",
+  northwindHash,
 ]);
 
 // Room: independent hash verification + claim-by-claim verification labels.
-const room = await get("/room/room-northwind");
 checks.push(
   [room.includes("hash recomputes"), "room: hash recomputes independently", "hash recomputes"],
+  [
+    room.includes("2 signatures verify"),
+    "room: both posted cards verify against the keys they name",
+    "2 signatures verify",
+  ],
   [room.includes("key authenticated"), "room: key authentication shown", "key authenticated"],
   [room.includes("claims lapsed"), "room: expired authority claims lapse, key still authenticates", "claims lapsed"],
   [
@@ -509,10 +521,58 @@ checks.push([
 // ---------------------------------------------------------------------------
 const keyDirRes = await fetch(`${base}/.well-known/agent-commons-keys`);
 const keyDir = await keyDirRes.json().catch(() => ({}));
+const directoryKeys = Array.isArray(keyDir.keys) ? keyDir.keys : [];
+const directoryIssuers = keyDir.issuers ?? [];
 checks.push([
-  keyDirRes.status === 200 && Array.isArray(keyDir.keys) && (keyDir.issuers ?? []).length > 0,
-  "keys: the directory answers, and lists the issuers on the board",
-  `${keyDir.keys?.length ?? "?"} keys / ${keyDir.issuers?.length ?? "?"} issuers`,
+  keyDirRes.status === 200 && directoryKeys.length > 0 && directoryKeys.length === directoryIssuers.length,
+  "keys: every issuer on the board has a public key published, and the directory is not empty",
+  `${directoryKeys.length} keys / ${directoryIssuers.length} issuers`,
+]);
+
+/**
+ * The canonical form the product pins (`src/lib/canonical.ts`): object keys
+ * sorted ascending, `undefined` dropped, arrays in order, UTF-8.
+ *
+ * Re-implemented here rather than imported. This check is meant to prove the
+ * contract is stated precisely enough that a third party can implement it from
+ * the description alone — importing our own helper would only prove the code
+ * agrees with itself.
+ */
+function sortValue(value) {
+  if (Array.isArray(value)) return value.map(sortValue);
+  if (value !== null && typeof value === "object") {
+    const out = {};
+    for (const key of Object.keys(value).sort()) {
+      if (value[key] === undefined) continue;
+      out[key] = sortValue(value[key]);
+    }
+    return out;
+  }
+  return value;
+}
+const canonicalJson = (value) => JSON.stringify(sortValue(value));
+
+// The whole claim, from outside: take a card off the board, take its issuer's
+// key from the public directory, and verify the signature with no help from the
+// deployment and no shared secret.
+const { createPublicKey, verify } = await import("node:crypto");
+const issuerKey = directoryKeys.find((k) => k.kid === onBoard?.author);
+let outsiderVerdict = "no key published for the card's issuer";
+if (issuerKey && onBoard?.sig) {
+  const { sig, ...payload } = onBoard;
+  outsiderVerdict = verify(
+    null,
+    Buffer.from(canonicalJson(payload), "utf8"),
+    createPublicKey({ key: issuerKey.publicKeyJwk, format: "jwk" }),
+    Buffer.from(sig, "base64url"),
+  )
+    ? "verified"
+    : "signature did not verify";
+}
+checks.push([
+  outsiderVerdict === "verified",
+  "keys: an outsider verifies a board card using only the published key",
+  outsiderVerdict,
 ]);
 
 // ---------------------------------------------------------------------------
