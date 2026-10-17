@@ -39,9 +39,15 @@ checks.push(
 // answered. Read-only: every answer is grounded in the live board.
 checks.push(
   [
-    home.includes("Gemini assistant") && home.includes("A demo client"),
-    "guide: the panel is on the overview, labelled as a demo client",
-    "Gemini assistant + demo client",
+    // Provider-independent: the panel must be labelled as a separate demo client
+    // and must name the model it is using — "Gemini assistant" when Gemini is
+    // configured, an explicit "answering with <model> — not Gemini" when it is
+    // not. Either way a viewer can tell what they are looking at.
+    home.includes("separate AI agent") &&
+      home.includes("demo client") &&
+      (home.includes("Gemini assistant") || home.includes("Currently answering with")),
+    "guide: the panel is a separate demo client, and names the model behind it",
+    "separate AI agent + model named",
   ],
   [
     home.includes("Overview") && home.includes("Both sides agreed") && home.includes("Confirm deal"),
@@ -56,9 +62,13 @@ checks.push(
   [
     guideProduct.role === "demo-assistant" &&
       guideAnswer.length > 0 &&
-      ["gemini", "deterministic-fallback"].includes(guideProduct.source),
+      // Any of the three is honest, because the answer says which one it was:
+      // Gemini, a configured test provider, or no model at all. This check must
+      // not require a live model call — the suite has to stay green without a
+      // key, which is exactly why `npm run check:llm` exists separately.
+      ["gemini", "openai-compatible", "deterministic-fallback"].includes(guideProduct.source),
     "guide: answers a question and labels its source honestly",
-    `source=${guideProduct.source}`,
+    `source=${guideProduct.source} model=${guideProduct.model}`,
   ],
   [
     typeof guideProduct.grounded === "string" &&

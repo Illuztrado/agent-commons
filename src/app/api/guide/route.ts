@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { listRooms, readResultCards, verifyTerms } from "@/lib/outcome-service";
 import type { RoomSummary } from "@/lib/transport";
-import { hasGeminiKey, generateText } from "@/lib/gemini";
+import { llmConfig, llmGenerateText } from "@/lib/llm";
 
 /**
  * POST /api/guide
@@ -16,8 +16,12 @@ import { hasGeminiKey, generateText } from "@/lib/gemini";
  *   - explain_card(room_id)   -> the result cards behind a room
  *   - verify_terms(terms)     -> recompute the hash from terms alone
  *
- * If GEMINI_API_KEY is absent (BYOK), it falls back to deterministic answers
- * so the demo never breaks — and the fallback is always labelled.
+ * Which model answers is decided in `@/lib/llm`: Gemini when a Gemini key is
+ * configured, otherwise an OpenAI-compatible endpoint if one is, otherwise no
+ * model at all. Every response says which one it was — `source` carries the
+ * provider and `model` carries the model id — so an answer produced by a test
+ * provider can never be mistaken for a Gemini call. With nothing configured it
+ * falls back to deterministic answers, and says that too.
  */
 
 const PRODUCT_ONE_LINER =
@@ -142,17 +146,22 @@ export async function POST(request: Request) {
       tool: "verify_terms",
       result: await verifyTermsTool(body.terms as Record<string, unknown>),
       source: "deterministic",
+      model: "none",
     });
   }
 
   const g = await ground(question, roomId);
   const fallback = deterministicAnswer(question, g);
+  const config = llmConfig();
 
-  if (!hasGeminiKey()) {
+  if (!config.configured) {
     return NextResponse.json({
       role: "demo-assistant",
-      answer: fallback ?? `${PRODUCT_ONE_LINER}\n(Gemini key not configured — this is the deterministic fallback path.)`,
+      answer:
+        fallback ??
+        `${PRODUCT_ONE_LINER}\n(No model configured — this is the deterministic fallback path.)`,
       source: "deterministic-fallback",
+      model: "none",
       grounded: compactContext(g),
     });
   }
@@ -166,14 +175,21 @@ export async function POST(request: Request) {
     `Live board context:\n${compactContext(g)}`;
 
   try {
-    const answer = await generateText(question, { systemInstruction, temperature: 0.3 });
-    return NextResponse.json({ role: "demo-assistant", answer, source: "gemini", grounded: compactContext(g) });
-  } catch (e) {
-    // Key present but the call failed — degrade honestly, never fabricate.
+    const answer = await llmGenerateText(question, { systemInstruction, temperature: 0.3 });
     return NextResponse.json({
       role: "demo-assistant",
-      answer: `${fallback ?? "The guide is unavailable right now."} (Gemini call failed: ${e instanceof Error ? e.message : String(e)} — showing the deterministic fallback.)`,
+      answer,
+      source: config.provider,
+      model: config.model,
+      grounded: compactContext(g),
+    });
+  } catch (e) {
+    // A model is configured but the call failed — degrade honestly, never fabricate.
+    return NextResponse.json({
+      role: "demo-assistant",
+      answer: `${fallback ?? "The guide is unavailable right now."} (Model call failed: ${e instanceof Error ? e.message : String(e)} — showing the deterministic fallback.)`,
       source: "deterministic-fallback",
+      model: config.model,
       grounded: compactContext(g),
     });
   }

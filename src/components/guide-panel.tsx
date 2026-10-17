@@ -24,18 +24,29 @@ const SUGGESTED_QUESTIONS = [
 interface GuideResponse {
   role: string;
   answer?: string;
-  source?: "gemini" | "deterministic-fallback";
+  source?: "gemini" | "openai-compatible" | "deterministic-fallback" | "deterministic";
+  model?: string;
   grounded?: string;
   tool?: string;
   result?: string;
 }
 
-function SourceBadge({ source }: { source?: string }) {
+/**
+ * Which model answered — named, never rounded up to "Gemini".
+ *
+ * The distinction is the whole point of this badge: a test provider answering
+ * must not look like a Gemini call, and no model at all must not look like
+ * either.
+ */
+function SourceBadge({ source, model }: { source?: string; model?: string }) {
   if (source === "gemini") {
-    return <Badge tone="green">Gemini</Badge>;
+    return <Badge tone="green">{model ?? "Gemini"}</Badge>;
+  }
+  if (source === "openai-compatible") {
+    return <Badge tone="amber">{model ?? "test model"} · not Gemini</Badge>;
   }
   if (source === "deterministic-fallback") {
-    return <Badge tone="amber">fixed fallback (no API key)</Badge>;
+    return <Badge tone="amber">fixed fallback (no model configured)</Badge>;
   }
   if (source === "deterministic") {
     return <Badge tone="amber">deterministic tool</Badge>;
@@ -43,11 +54,21 @@ function SourceBadge({ source }: { source?: string }) {
   return null;
 }
 
-export function GuidePanel() {
+export function GuidePanel({
+  provider,
+  model,
+}: {
+  provider?: "gemini" | "openai-compatible" | "none";
+  model?: string;
+} = {}) {
   const [question, setQuestion] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [response, setResponse] = React.useState<GuideResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+
+  // The panel is the Gemini integration. When something else answers, say so in
+  // the heading rather than under it — a title is what a viewer reads first.
+  const isGemini = provider !== "openai-compatible";
 
   async function ask(q: string) {
     const trimmed = q.trim();
@@ -76,14 +97,19 @@ export function GuidePanel() {
           <GeminiMark className="size-10 shrink-0" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-semibold tracking-tight">Gemini assistant</h2>
+              <h2 className="text-lg font-semibold tracking-tight">
+                {isGemini ? "Gemini assistant" : "Assistant"}
+              </h2>
               <span className="rounded-full border border-violet-300 px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:border-violet-800 dark:text-violet-300">
                 separate AI agent
               </span>
             </div>
             <p className="text-sm text-neutral-600 dark:text-neutral-400">
               Reads your deals and answers questions about them. It is not part of the
-              dashboard — the deals above come from the agents, not from Gemini.
+              dashboard — the deals above come from the agents, not from this panel.
+              {isGemini
+                ? " Every answer names the model that produced it."
+                : ` Currently answering with ${model ?? "a test provider"} — not Gemini.`}
             </p>
           </div>
         </div>
@@ -114,7 +140,7 @@ export function GuidePanel() {
           <input
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Ask Gemini about your deals"
+            placeholder="Ask about your deals"
             className="min-w-0 flex-1 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-950"
           />
           <Button type="submit" disabled={loading || !question.trim()}>
@@ -141,7 +167,7 @@ export function GuidePanel() {
             )}
             <div className="flex items-center gap-2">
               <span className="text-xs text-neutral-500">answered by</span>
-              <SourceBadge source={response.source} />
+              <SourceBadge source={response.source} model={response.model} />
             </div>
             {response.grounded && (
               <details className="text-xs text-neutral-500">
@@ -155,8 +181,9 @@ export function GuidePanel() {
         )}
 
         <p className="text-[11px] leading-relaxed text-neutral-400 dark:text-neutral-500">
-          A demo client attached to show a Gemini call in context: it answers from the live
-          deals. Without an API key it falls back to a fixed answer and says so.
+          {isGemini
+            ? "A demo client attached to show a Gemini call in context: it answers from the live deals. Without a model configured it falls back to a fixed answer and says so."
+            : "A demo client attached to show a model call in context: it answers from the live deals. This build is running a test provider, not Gemini — the badge under each answer names the model."}
         </p>
       </div>
     </div>

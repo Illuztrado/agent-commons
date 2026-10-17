@@ -10,6 +10,7 @@ import {
 } from "@/lib/overview";
 import { confirmSignOff } from "@/app/room/[id]/actions";
 import { GuidePanel } from "@/components/guide-panel";
+import { llmConfig } from "@/lib/llm";
 import { DealFunnel } from "@/components/deal-funnel";
 import { counterpartyTrust } from "@/lib/agent-trust";
 import { conversationUrl } from "@/lib/conversation-links";
@@ -36,6 +37,7 @@ export default async function OverviewPage() {
   const entries = rooms.map((room, i) => ({ room, cards: mergeResultCards(rawCards[i]) }));
 
   const { buyer, suppliers, pending } = buildOverview(entries, signOffs);
+  const llm = llmConfig();
   const stages = funnelStages(suppliers);
   const trusts = Object.fromEntries(suppliers.map((s) => [s.roomId, counterpartyTrust(s.roomId)]));
   const links = Object.fromEntries(suppliers.map((s) => [s.roomId, conversationUrl(s.roomId)]));
@@ -79,7 +81,7 @@ export default async function OverviewPage() {
       </section>
 
       <section>
-        <GuidePanel />
+        <GuidePanel provider={llm.provider} model={llm.model} />
       </section>
 
       <footer className="text-xs text-neutral-500">{DATA_PROVENANCE}</footer>

@@ -139,6 +139,20 @@ transport boundary; the **data layer** is any implementation of
 the product (`/api/guide`, key read from the environment only) and is the only
 place an LLM is called.
 
+**Which model answers the guide.** Gemini whenever `GEMINI_API_KEY` is set —
+that is the hackathon requirement, and it wins over everything else. With no
+Gemini key, an OpenAI-compatible endpoint may stand in (`LLM_BASE_URL`,
+`LLM_API_KEY`, `LLM_MODEL`) so the call path can be exercised against a real
+service before the key exists. **Every answer names the model that produced it**,
+and a stand-in provider is labelled as not Gemini, so a viewer is never told a
+Gemini call happened when one did not. With nothing configured the panel answers
+deterministically and says that too.
+
+`npm run check:llm` makes one real call and reports which provider answered. It
+is deliberately outside `npm test`: the suite has to stay green without a key and
+without a network, which is exactly why the real call needs its own check — a
+green suite would otherwise prove nothing about whether the provider path works.
+
 ## Run it locally (5 minutes)
 
 ```bash
@@ -157,6 +171,7 @@ Checks:
 npm run typecheck              # tsc --noEmit
 npm test                       # unit tests (hash, sign-off, transport wrapper)
 npm run check:transport        # FirestoreTransport across two processes
+npm run check:llm              # one real model call; needs a key, so not in npm test
 npm run verify:hash            # anyone can recompute a card's hash
 npm run build && npm start     # production build on :8080
 npm run smoke                  # HTTP checks; needs a server already running
