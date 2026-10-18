@@ -129,6 +129,21 @@ async function verifyTermsTool(terms: Record<string, unknown>): Promise<string> 
   return `Recomputed hash from terms alone: ${hash}\n${onBoard}`;
 }
 
+/**
+ * Why the call failed, in one clause a reader can act on.
+ *
+ * The provider's own message for a spent free tier is a wall of JSON with the
+ * method name and service metadata inside it. That must not be pasted into the
+ * answer: it would appear on screen mid-demo and read as a crash.
+ */
+function failureReason(e: unknown): string {
+  const text = e instanceof Error ? e.message : String(e);
+  if (/RESOURCE_EXHAUSTED|\b429\b|quota|rate limit/i.test(text)) return "quota or rate limit";
+  if (/API key|\b401\b|\b403\b|PERMISSION_DENIED|unauthenticated/i.test(text)) return "the key was rejected";
+  if (/timeout|ETIMEDOUT|fetch failed|ECONN|ENOTFOUND/i.test(text)) return "network";
+  return "provider error";
+}
+
 export async function POST(request: Request) {
   let body: Record<string, unknown> = {};
   try {
@@ -185,11 +200,16 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     // A model is configured but the call failed — degrade honestly, never fabricate.
+    // The answer stays clean and the failure is disclosed on its own line, so a
+    // spent quota produces a readable fallback instead of a stack trace on screen.
+    const reason = failureReason(e);
+    console.warn("guide: model call failed —", reason, e);
     return NextResponse.json({
       role: "demo-assistant",
-      answer: `${fallback ?? "The guide is unavailable right now."} (Model call failed: ${e instanceof Error ? e.message : String(e)} — showing the deterministic fallback.)`,
+      answer: fallback ?? `${PRODUCT_ONE_LINER}\n(The guide could not answer that from the board.)`,
       source: "deterministic-fallback",
       model: config.model,
+      note: `The model call failed (${reason}), so this is the fixed fallback answer — not a model answer.`,
       grounded: compactContext(g),
     });
   }

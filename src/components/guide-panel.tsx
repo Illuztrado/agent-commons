@@ -29,6 +29,8 @@ interface GuideResponse {
   grounded?: string;
   tool?: string;
   result?: string;
+  /** Present when a model was configured but the call failed. */
+  note?: string;
 }
 
 /**
@@ -46,7 +48,16 @@ function SourceBadge({ source, model }: { source?: string; model?: string }) {
     return <Badge tone="amber">{model ?? "test model"} · not Gemini</Badge>;
   }
   if (source === "deterministic-fallback") {
-    return <Badge tone="amber">fixed fallback (no model configured)</Badge>;
+    // Two different situations share this source: nothing configured, and a model
+    // that was configured but the call failed — quota, rate limit, network,
+    // timeout. Reporting the second as "no model configured" is a lie, and it is
+    // exactly the one that happens mid-demo when a free tier runs dry.
+    const hadModel = Boolean(model && model !== "none");
+    return (
+      <Badge tone="amber">
+        {hadModel ? `model call failed (${model}) — fixed answer` : "fixed fallback (no model configured)"}
+      </Badge>
+    );
   }
   if (source === "deterministic") {
     return <Badge tone="amber">deterministic tool</Badge>;
@@ -176,6 +187,9 @@ export function GuidePanel({
               <span className="text-xs text-neutral-500">answered by</span>
               <SourceBadge source={response.source} model={response.model} />
             </div>
+            {response.note && (
+              <p className="text-xs text-amber-700 dark:text-amber-400">{response.note}</p>
+            )}
             {response.grounded && (
               <details className="text-xs text-neutral-500">
                 <summary className="cursor-pointer">What the answer was based on</summary>
