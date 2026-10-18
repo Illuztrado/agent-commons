@@ -94,6 +94,14 @@ if [[ -n "${GEMINI_MODEL:-}" ]]; then
   echo "GEMINI_MODEL: ${GEMINI_MODEL}"
 fi
 
+# A project scaffolded in AI Studio usually has a named Firestore database, not
+# "(default)". Reading the wrong one is silent — an empty board, which reads as a
+# broken deploy. Forward the id when the caller knows it.
+if [[ -n "${FIRESTORE_DATABASE_ID:-}" ]]; then
+  ENV_VARS="${ENV_VARS},FIRESTORE_DATABASE_ID=${FIRESTORE_DATABASE_ID}"
+  echo "FIRESTORE_DATABASE_ID: ${FIRESTORE_DATABASE_ID}"
+fi
+
 # The Firebase client config is a BUILD-time value, not a runtime one: Next.js
 # inlines NEXT_PUBLIC_* into the browser bundle, so a runtime env var reaches
 # nothing. --source deploys carry build values with --set-build-env-vars, so

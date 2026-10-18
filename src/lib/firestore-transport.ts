@@ -212,7 +212,16 @@ export class FirestoreTransport implements Transport {
   constructor(options: FirestoreTransportOptions = {}) {
     this.collectionId =
       options.collection ?? first(process.env.FIRESTORE_COLLECTION) ?? DEFAULT_COLLECTION;
-    this.db = getFirestore(resolveApp());
+    // Firebase projects scaffolded in AI Studio get a *named* Firestore database
+    // rather than "(default)", and a project can hold both. Reading the wrong one
+    // does not error — it just shows an empty board, which looks exactly like a
+    // broken deployment. FIRESTORE_DATABASE_ID picks one; unset means "(default)".
+    const databaseId = first(process.env.FIRESTORE_DATABASE_ID);
+    const app = resolveApp();
+    this.db =
+      databaseId && databaseId !== "(default)"
+        ? getFirestore(app, databaseId)
+        : getFirestore(app);
   }
 
   private col() {
