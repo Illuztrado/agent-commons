@@ -16,7 +16,9 @@ set -euo pipefail
 GCLOUD="${GCLOUD:-$(command -v gcloud || echo "$HOME/google-cloud-sdk/bin/gcloud")}"
 PROJECT="${1:-}"
 REGION="asia-east1"
-SERVICE="agent-commons"
+# SERVICE can be overridden so a risky branch can be deployed beside the
+# submission URL instead of on top of it: SERVICE=agent-commons-auth.
+SERVICE="${SERVICE:-agent-commons}"
 
 if [[ -z "$PROJECT" ]]; then
   echo "usage: $0 YOUR_PROJECT_ID" >&2
@@ -84,6 +86,40 @@ else
   echo "GEMINI_API_KEY: not set — the guide will answer from the deterministic fallback"
 fi
 
+# The Firebase client config is a BUILD-time value, not a runtime one: Next.js
+# inlines NEXT_PUBLIC_* into the browser bundle, so a runtime env var reaches
+# nothing. --source deploys carry build values with --set-build-env-vars, so
+# forward any that the caller exported.
+#
+# This matters because the failure is silent: the bundle falls back to
+# `AIzaSyPlaceholderBuildTimeKey`, the image builds and serves fine, and only
+# the sign-in button is broken. Read through printenv so an unset variable is
+# simply absent rather than a `set -u` abort.
+BUILD_VARS=""
+for name in \
+  NEXT_PUBLIC_FIREBASE_API_KEY \
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN \
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID \
+  NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET \
+  NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID \
+  NEXT_PUBLIC_FIREBASE_APP_ID \
+  NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID \
+  NEXT_PUBLIC_FIREBASE_DATABASE_ID; do
+  value="$(printenv "$name" || true)"
+  if [[ -n "$value" ]]; then
+    BUILD_VARS="${BUILD_VARS:+$BUILD_VARS,}${name}=${value}"
+  fi
+done
+
+BUILD_ARGS=()
+if [[ -n "$BUILD_VARS" ]]; then
+  BUILD_ARGS=(--set-build-env-vars "$BUILD_VARS")
+  echo "build-time config: ${BUILD_ARGS[*]}"
+else
+  echo "build-time config: none supplied — the client bundle will carry placeholder Firebase values"
+  echo "                    export NEXT_PUBLIC_FIREBASE_* before running this if sign-in must work"
+fi
+
 "$GCLOUD" run deploy "$SERVICE" \
   --source . \
   --project "$PROJECT" \
@@ -94,6 +130,7 @@ fi
   --cpu 1 \
   --max-instances 1 \
   --set-env-vars "$ENV_VARS" \
+  ${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"} \
   --quiet
 
 echo "== 5. url =="
