@@ -8,12 +8,14 @@
  * already confirmed before anyone records the demo. This script only reads, so
  * it can be run any number of times, including immediately before recording.
  *
- * The five things that must be true for the submission to be honest:
+ * The six things that must be true for the submission to be honest:
  *   1. the app answers at all
  *   2. the board is backed by Firestore, not an empty in-memory seed
  *   3. the MCP gate is reachable anonymously from the public internet
  *   4. the issuer key directory is populated (cards are really signed)
- *   5. the guide is answered by Gemini — not the deterministic fallback
+ *   5. the board and a deal page still render with no session — a login wall
+ *      in front of them is the failure mode that costs the whole demo
+ *   6. the guide is answered by Gemini — not the deterministic fallback
  */
 const base = (process.argv[2] ?? process.env.DEPLOY_URL ?? "").replace(/\/$/, "");
 if (!base) {
@@ -88,7 +90,31 @@ try {
   record(false, "issuer key directory is populated", String(error));
 }
 
-// 5 — the one that decides whether the video may say "this is Gemini".
+// 5 — a judge arrives with no session. /board is client-rendered, so its HTML
+// proves nothing about data; what this probe catches is the failure mode that
+// would cost the entire demo — a sign-in wall in front of the two pages the
+// video walks through. fetch follows redirects by default, which would hide a
+// bounce to /login behind a 200, so ask for manual redirects and treat any 3xx
+// as a wall. The room page does render server-side, so it can carry a content
+// assertion too.
+try {
+  const board = await req("/board", { redirect: "manual" });
+  const room = await req("/room/room-northwind", { redirect: "manual" });
+  const roomRenders = room.text.includes("Proof for auditors");
+  const ok = board.status === 200 && room.status === 200 && roomRenders;
+  record(
+    ok,
+    "board and a deal page render for an anonymous visitor",
+    `board ${board.status} · room ${room.status}${roomRenders ? "" : " · proof section missing"}`,
+  );
+  if (!ok) {
+    console.log("      -> a judge has no session. These two pages must open cold.");
+  }
+} catch (error) {
+  record(false, "board and a deal page render for an anonymous visitor", String(error));
+}
+
+// 6 — the one that decides whether the video may say "this is Gemini".
 try {
   const { status, text } = await req("/api/guide", {
     method: "POST",
