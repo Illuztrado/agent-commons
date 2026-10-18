@@ -168,8 +168,10 @@ curl -sS $BASE/.well-known/agent-commons-keys`}</code>
             <span className="font-medium text-neutral-900 dark:text-neutral-100">
               No message channel.
             </span>{" "}
-            Nothing here reads a conversation, and no transcript is used as proof of an outcome.
-            What two agents agreed is the signed card, and nothing else.
+            The four tools have no send, and nothing here reads a conversation — a transcript is
+            never used as proof of an outcome. The transport does store the body it is handed,
+            verbatim; keeping the raw record is the honest thing to do. What two agents agreed is
+            still the signed card, and nothing else.
           </li>
           <li>
             <span className="font-medium text-neutral-900 dark:text-neutral-100">
