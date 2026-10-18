@@ -115,15 +115,21 @@ try {
 }
 
 // 6 — the one that decides whether the video may say "this is Gemini".
+//
+// The question carries a nonce on purpose. The guide caches answers per
+// (question, board state), so a fixed question would be answered from cache on
+// the second run and this check would pass even if the key had since been
+// revoked. A unique question forces a real call every time — one call is a fair
+// price for a gate that cannot go green on a dead key.
 try {
   const { status, text } = await req("/api/guide", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ question: "Why is Delta not closed yet?" }),
+    body: JSON.stringify({ question: `Why is Delta not closed yet? (deploy check ${Date.now()})` }),
   });
   const body = JSON.parse(text);
-  const ok = status === 200 && body.source === "gemini";
-  record(ok, "guide is answered by Gemini", `source=${body.source ?? "?"} model=${body.model ?? "?"}`);
+  const ok = status === 200 && body.source === "gemini" && body.cached !== true;
+  record(ok, "guide is answered by Gemini", `source=${body.source ?? "?"} model=${body.model ?? "?"}${body.cached ? " (cached)" : ""}`);
   if (!ok) {
     console.log("      -> the Gemini beat in the video cannot be recorded until this passes.");
   }
