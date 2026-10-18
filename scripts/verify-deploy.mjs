@@ -29,10 +29,25 @@ function record(ok, label, detail) {
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}${detail ? `  — ${detail}` : ""}`);
 }
 
+// A single dropped connection must not read as a failed check. This script is
+// the last gate before submitting, and it is run over whatever network happens
+// to be available; a transient `fetch failed` on the home page would say the
+// deployment is broken when it is not. Retry twice with a short backoff, and
+// only then let the error surface. A 4xx/5xx is an answer, not a failure to
+// reach the server, so those are returned immediately.
 async function req(path, init) {
-  const res = await fetch(base + path, init);
-  const text = await res.text();
-  return { status: res.status, text };
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const res = await fetch(base + path, init);
+      const text = await res.text();
+      return { status: res.status, text };
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+    }
+  }
+  throw lastError;
 }
 
 // 1 — the app answers.
