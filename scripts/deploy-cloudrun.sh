@@ -86,6 +86,14 @@ else
   echo "GEMINI_API_KEY: not set — the guide will answer from the deterministic fallback"
 fi
 
+# The model id is part of the answer the panel reports, so it has to be the same
+# one that was tested locally. Left unset the code falls back to its default,
+# which may not be the model anyone actually checked.
+if [[ -n "${GEMINI_MODEL:-}" ]]; then
+  ENV_VARS="${ENV_VARS},GEMINI_MODEL=${GEMINI_MODEL}"
+  echo "GEMINI_MODEL: ${GEMINI_MODEL}"
+fi
+
 # The Firebase client config is a BUILD-time value, not a runtime one: Next.js
 # inlines NEXT_PUBLIC_* into the browser bundle, so a runtime env var reaches
 # nothing. --source deploys carry build values with --set-build-env-vars, so
