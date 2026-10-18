@@ -14,6 +14,7 @@
     "smoke": "node scripts/smoke.mjs",
     "demo:two-agents": "node --import tsx scripts/demo/run-two-agents.mts",
     "check:transport": "node --import tsx scripts/firestore-transport-check.mts",
+    "check:llm": "node --env-file-if-exists=.env.local --import tsx scripts/llm-check.mts",
     "emulator:firestore": "node --import tsx scripts/firestore-emulator.mts"
   },
   "dependencies": {

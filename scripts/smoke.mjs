@@ -24,8 +24,9 @@ async function post(path, body) {
 
 const checks = [];
 
-// Board: outcomes render, and partial is never shown as full.
-const board = await get("/");
+// Board (now at /board, out of the menu): outcomes render, and partial is never shown as full.
+const board = await get("/board");
+const home = await get("/");
 checks.push(
   [board.includes("Agent Commons"), "board: product name renders", "Agent Commons"],
   [board.includes("results board"), "board: results board renders", "results board"],
@@ -36,11 +37,27 @@ checks.push(
 // The guide panel — the Gemini demonstration client on the judge click path.
 // It is a demo client, not the product core, and it must always say which path
 // answered. Read-only: every answer is grounded in the live board.
-checks.push([
-  board.includes("Ask the guide") && board.includes("demo client"),
-  "guide: the panel is on the board, labelled as a demo client",
-  "Ask the guide + demo client",
-]);
+checks.push(
+  [
+    // Provider-independent: the panel must be labelled as a separate demo client
+    // and must say which path answered — "Gemini assistant" when Gemini is
+    // configured, an explicit "answering with <model> — not Gemini" when a test
+    // provider is, and an explicit "no model is configured" when neither is.
+    // All three are honest; silence is not.
+    home.includes("separate AI agent") &&
+      home.includes("demo client") &&
+      (home.includes("Gemini assistant") ||
+        home.includes("Currently answering with") ||
+        home.includes("No model is configured")),
+    "guide: the panel is a separate demo client, and names the model behind it",
+    "separate AI agent + model named",
+  ],
+  [
+    home.includes("Overview") && home.includes("Both sides agreed") && home.includes("Confirm deal"),
+    "overview: the home page shows the funnel and the deal waiting for a human",
+    "Overview + funnel + Confirm deal",
+  ],
+);
 
 const guideProduct = await post("/api/guide", { question: "What is this product?" });
 const guideAnswer = typeof guideProduct.answer === "string" ? guideProduct.answer : "";
@@ -48,9 +65,13 @@ checks.push(
   [
     guideProduct.role === "demo-assistant" &&
       guideAnswer.length > 0 &&
-      ["gemini", "deterministic-fallback"].includes(guideProduct.source),
+      // Any of the three is honest, because the answer says which one it was:
+      // Gemini, a configured test provider, or no model at all. This check must
+      // not require a live model call — the suite has to stay green without a
+      // key, which is exactly why `npm run check:llm` exists separately.
+      ["gemini", "openai-compatible", "deterministic-fallback"].includes(guideProduct.source),
     "guide: answers a question and labels its source honestly",
-    `source=${guideProduct.source}`,
+    `source=${guideProduct.source} model=${guideProduct.model}`,
   ],
   [
     typeof guideProduct.grounded === "string" &&
@@ -62,23 +83,35 @@ checks.push(
 );
 
 // verify_terms recomputes a real card's hash from its terms alone — the
-// "machine-recomputable" claim, exercised where a judge can see it.
+// "machine-recomputable" claim, exercised where a judge can see it. The terms
+// below are the seeded deal's own and the expected hash is read off the room
+// page rather than hardcoded, so this survives a change to the demo data.
+const room = await get("/room/room-northwind");
+const northwindHash = termsHashOf(room);
 const guideVerify = await post("/api/guide", {
-  terms: { spec: "A-100", quantity: 5000, unit_price: 4.05, lead_time_days: 21 },
+  terms: {
+    spec: "HBR-VAC-750",
+    quantity: 12000,
+    unit_price: 3.85,
+    incoterms: "FOB Haiphong",
+    payment_terms: "30% deposit, 70% on B/L",
+    lead_time_days: 45,
+  },
 });
 checks.push([
-  guideVerify.tool === "verify_terms" &&
-    String(guideVerify.result).includes(
-      "sha256:1e252cc8c7bbe8b262e5b9a7f143d8b2eeb87a3c669f82c7a7eed60758a0591e",
-    ),
+  guideVerify.tool === "verify_terms" && String(guideVerify.result).includes(northwindHash),
   "guide: verify_terms recomputes room-northwind's hash from terms alone",
-  "sha256:1e252cc8…",
+  northwindHash,
 ]);
 
 // Room: independent hash verification + claim-by-claim verification labels.
-const room = await get("/room/room-northwind");
 checks.push(
   [room.includes("hash recomputes"), "room: hash recomputes independently", "hash recomputes"],
+  [
+    room.includes("2 signatures verify"),
+    "room: both posted cards verify against the keys they name",
+    "2 signatures verify",
+  ],
   [room.includes("key authenticated"), "room: key authentication shown", "key authenticated"],
   [room.includes("claims lapsed"), "room: expired authority claims lapse, key still authenticates", "claims lapsed"],
   [
@@ -128,9 +161,9 @@ checks.push([demo.includes("Live negotiation"), "demo: live negotiation page ren
 // Agent card editor + builder.
 const agentPage = await get("/agent");
 checks.push([
-  agentPage.includes("Agent card editor"),
-  "agent: card editor page renders",
-  "Agent card editor",
+  agentPage.includes("Your agents") && agentPage.includes("Create agent"),
+  "agents: your agents and the create button render",
+  "Your agents + Create agent",
 ]);
 
 const built = await post("/api/agent-card", {
@@ -296,7 +329,7 @@ const open = await get("/room/room-northwind");
 const openHash = termsHashOf(open);
 checks.push(
   [
-    open.includes("Confirming as") && open.includes(">Confirm<"),
+    open.includes("Confirm deal"),
     "sign-off: a card at awaiting_signature offers the human a Confirm button",
     "Confirm",
   ],
@@ -344,10 +377,10 @@ checks.push(
     "sign-off: the page shows who confirmed it",
     "Confirmed by Judge",
   ],
-  [!closed.includes("Confirming as"), "sign-off: a closed card offers no second Confirm", "gone"],
+  [!closed.includes("Confirm deal"), "sign-off: a closed card offers no second Confirm", "gone"],
 );
 
-const boardAfter = await get("/");
+const boardAfter = await get("/board");
 checks.push(
   [boardAfter.includes("signed off"), "sign-off: the board row picks the state up from the transport", "signed off"],
   [boardAfter.includes("partial 1/2"), "sign-off: a human confirm never inflates agent agreement", "partial 1/2"],
@@ -370,7 +403,7 @@ const held = await get("/room/room-orion");
 const heldHash = termsHashOf(held);
 const noHumanStep = await postStatus("/api/sign-off", { room_id: "room-orion", hash: heldHash });
 checks.push(
-  [!held.includes("Confirming as"), "sign-off: an impasse card offers no Confirm button", "no affordance"],
+  [!held.includes("Confirm deal"), "sign-off: an impasse card offers no Confirm button", "no affordance"],
   [
     noHumanStep.status === 409,
     "sign-off: a card that never reached the human step cannot be closed",
@@ -426,6 +459,19 @@ checks.push([
   "204 + allow-methods + expose-headers",
 ]);
 
+// The gate has to be findable, not just present: a reader who never learns that
+// /mcp exists cannot score the one thing that makes this an outcome layer rather
+// than a dashboard. The page states the endpoint and the tool set it serves.
+const integrate = await get("/integrate");
+checks.push([
+  integrate.includes("POST /mcp") &&
+    integrate.includes("post_result_card") &&
+    integrate.includes("agent-commons-keys") &&
+    integrate.includes("No login"),
+  "gate: the entry point is reachable from the UI, and names the endpoint and its tools",
+  "/integrate + POST /mcp + 4 tools + key directory",
+]);
+
 // Tamper with a card that is really on the board: the schema gate is not what is
 // under test, so everything but the tampered field has to be genuine.
 const readCards = await mcp("tools/call", {
@@ -433,6 +479,32 @@ const readCards = await mcp("tools/call", {
   arguments: { room_id: "room-northwind" },
 });
 const onBoard = JSON.parse(readCards.json?.result?.content?.[0]?.text ?? "{}").cards?.[0];
+
+// The happy path, from outside: an anonymous caller reads the board through the
+// gate and gets the same rooms the board renders. Everything above and below
+// tests refusals, which would all pass if the gate served nobody.
+const listed = await mcp("tools/call", { name: "list_rooms", arguments: {} });
+const listedRooms = JSON.parse(listed.json?.result?.content?.[0]?.text ?? "{}").rooms ?? [];
+checks.push([
+  listed.json?.result?.isError !== true &&
+    listedRooms.some((r) => r.room_id === "room-northwind") &&
+    listedRooms.every((r) => typeof r.status === "string"),
+  "gate: an anonymous caller lists the board through the gate and gets the board's rooms",
+  `${listedRooms.length} rooms via the gate`,
+]);
+
+// And can check a hash without trusting us: verify_terms recomputes it from the
+// terms alone, so the card we just read has to come back under its own hash.
+const verified = await mcp("tools/call", {
+  name: "verify_terms",
+  arguments: { terms: onBoard?.terms },
+});
+const verifyText = verified.json?.result?.content?.[0]?.text ?? "";
+checks.push([
+  verifyText.includes(onBoard?.hash ?? "\u0000") && verifyText.includes("room-northwind"),
+  "gate: verify_terms recomputes a card's hash from its terms and finds that card",
+  "hash recomputed, card found",
+]);
 
 const forgedHash = await mcp("tools/call", {
   name: "post_result_card",
@@ -462,10 +534,58 @@ checks.push([
 // ---------------------------------------------------------------------------
 const keyDirRes = await fetch(`${base}/.well-known/agent-commons-keys`);
 const keyDir = await keyDirRes.json().catch(() => ({}));
+const directoryKeys = Array.isArray(keyDir.keys) ? keyDir.keys : [];
+const directoryIssuers = keyDir.issuers ?? [];
 checks.push([
-  keyDirRes.status === 200 && Array.isArray(keyDir.keys) && (keyDir.issuers ?? []).length > 0,
-  "keys: the directory answers, and lists the issuers on the board",
-  `${keyDir.keys?.length ?? "?"} keys / ${keyDir.issuers?.length ?? "?"} issuers`,
+  keyDirRes.status === 200 && directoryKeys.length > 0 && directoryKeys.length === directoryIssuers.length,
+  "keys: every issuer on the board has a public key published, and the directory is not empty",
+  `${directoryKeys.length} keys / ${directoryIssuers.length} issuers`,
+]);
+
+/**
+ * The canonical form the product pins (`src/lib/canonical.ts`): object keys
+ * sorted ascending, `undefined` dropped, arrays in order, UTF-8.
+ *
+ * Re-implemented here rather than imported. This check is meant to prove the
+ * contract is stated precisely enough that a third party can implement it from
+ * the description alone — importing our own helper would only prove the code
+ * agrees with itself.
+ */
+function sortValue(value) {
+  if (Array.isArray(value)) return value.map(sortValue);
+  if (value !== null && typeof value === "object") {
+    const out = {};
+    for (const key of Object.keys(value).sort()) {
+      if (value[key] === undefined) continue;
+      out[key] = sortValue(value[key]);
+    }
+    return out;
+  }
+  return value;
+}
+const canonicalJson = (value) => JSON.stringify(sortValue(value));
+
+// The whole claim, from outside: take a card off the board, take its issuer's
+// key from the public directory, and verify the signature with no help from the
+// deployment and no shared secret.
+const { createPublicKey, verify } = await import("node:crypto");
+const issuerKey = directoryKeys.find((k) => k.kid === onBoard?.author);
+let outsiderVerdict = "no key published for the card's issuer";
+if (issuerKey && onBoard?.sig) {
+  const { sig, ...payload } = onBoard;
+  outsiderVerdict = verify(
+    null,
+    Buffer.from(canonicalJson(payload), "utf8"),
+    createPublicKey({ key: issuerKey.publicKeyJwk, format: "jwk" }),
+    Buffer.from(sig, "base64url"),
+  )
+    ? "verified"
+    : "signature did not verify";
+}
+checks.push([
+  outsiderVerdict === "verified",
+  "keys: an outsider verifies a board card using only the published key",
+  outsiderVerdict,
 ]);
 
 // ---------------------------------------------------------------------------

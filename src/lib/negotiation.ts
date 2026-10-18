@@ -118,9 +118,26 @@ export interface NegotiationRoomInput {
   seller: Party;
   maxRounds?: number;
   baseFields?: Record<string, unknown>;
+  /**
+   * The posting agent's public key — the card's `author`.
+   *
+   * Distinct from `seller.id` on purpose. `seller.id` is a roster label, the
+   * kind both sides know before anything is posted; `author` has to be the key
+   * that actually signs, or the card names an issuer it cannot prove. Falls
+   * back to the seller's id so existing callers keep working.
+   */
+  author?: string;
 }
 
-/** Run a negotiation and turn the outcome into a signed result card. */
+/**
+ * Run a negotiation and turn the outcome into a signed result card.
+ *
+ * One card, not two. This path runs **both** sides inside our own engine — the
+ * buyer and the seller here are two roles we simulate, not two independent
+ * owners — so a single signature over the joint outcome is the honest artefact.
+ * The board's rooms are the opposite case: they stand for separate owners, so
+ * each side posts its own card (see `seed.ts`).
+ */
 export function negotiateToResultCard(
   input: NegotiationRoomInput,
   sign: (value: unknown) => string,
@@ -153,7 +170,7 @@ export function negotiateToResultCard(
     required_parties: required,
     agreed_by: outcome.status === "agreed" ? required : [],
     next_step: outcome.status === "agreed" ? "awaiting_signature" : null,
-    author: input.seller.id,
+    author: input.author ?? input.seller.id,
   });
 
   // Sign over the card without its `sig` field.

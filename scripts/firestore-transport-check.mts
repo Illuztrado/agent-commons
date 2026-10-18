@@ -217,7 +217,8 @@ check(
 
 // --- cards survive the round trip -----------------------------------------
 const northwind = await instance<ResultCard[]>([`--action=list-cards`, `--room=room-northwind`], "instance B listResultCards");
-check("cards: room-northwind cards come back from Firestore", (northwind ?? []).length === 1, `count=${northwind?.length ?? 0}`);
+// Two cards: the supplier's and the buyer's, each over the same terms hash.
+check("cards: room-northwind cards come back from Firestore", (northwind ?? []).length === 2, `count=${northwind?.length ?? 0}`);
 check(
   "cards: each stored card's hash still recomputes from its terms alone",
   (northwind ?? []).length > 0 && (northwind ?? []).every((c) => termsHash(c.terms) === c.hash),
@@ -232,8 +233,10 @@ check(
       c.v === 1 &&
       c.participants.length === 2 &&
       c.required_parties.length === 2 &&
-      c.agreed_by.length === 2 &&
-      c.agreement === "full" &&
+      // Each posted card claims one party's agreement — its own. The room reads
+      // full only when the merge unions the two, so a single card is partial.
+      c.agreed_by.length === 1 &&
+      c.agreement === "partial" &&
       typeof c.author === "string" &&
       c.next_step === "awaiting_signature" &&
       typeof c.terms.unit_price === "number",
@@ -244,7 +247,7 @@ check(
 const multiCards = await instance<ResultCard[]>([`--action=list-cards`, `--room=room-weekend`], "multi room cards");
 check(
   "routing: listResultCards(room) returns only that room's cards",
-  (multiCards ?? []).length === 1 && (multiCards ?? []).every((c) => c.room_id === "room-weekend"),
+  (multiCards ?? []).length === 2 && (multiCards ?? []).every((c) => c.room_id === "room-weekend"),
   `count=${multiCards?.length ?? 0} rooms=${[...new Set((multiCards ?? []).map((c) => c.room_id))].join(",")}`,
 );
 

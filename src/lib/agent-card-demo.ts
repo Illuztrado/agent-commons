@@ -2,7 +2,8 @@ import { generateAgentKeyPair, signValue, verifyValue } from "./keys";
 import { cardSigningPayload, type AgentCard, type Claim, type Evidence } from "./agent-card";
 
 /**
- * Demo agent cards with real Ed25519 evidence objects.
+ * The seeded agent roster — one buyer and the five counterparties it is
+ * negotiating with, each holding its own Ed25519 key.
  *
  * Honesty rules applied here (after review):
  *  - No bare booleans. Every claim is evidence / self_reported / unverified.
@@ -12,6 +13,12 @@ import { cardSigningPayload, type AgentCard, type Claim, type Evidence } from ".
  *    the agent key, so a receiver can actually validate it.
  *  - Capability probe and screening are marked `self_reported`: their signature
  *    proves authorship of a result, not independent execution.
+ *
+ * One key, two jobs. Each agent's `agent_id` here is the same public key that
+ * appears as `author` on the result cards it posts in `seed.ts`, so the badges a
+ * person sees and the signatures an auditor checks are the same identity. Before
+ * this, the seeded cards named their issuer as a plain string and the key
+ * directory listed nothing.
  */
 
 interface KeyPairLike {
@@ -19,12 +26,163 @@ interface KeyPairLike {
   privateKey: import("node:crypto").KeyObject;
 }
 
-// Each agent holds its own key; each owner holds a separate key of their own.
+/* ------------------------------------------------------------------ *
+ * The buyer — one owner, one agent, present in every room
+ * ------------------------------------------------------------------ */
+
 const buyerKeys = generateAgentKeyPair();
 const buyerOwnerKeys = generateAgentKeyPair();
-const supplierKeys = generateAgentKeyPair();
-const supplierOwnerKeys = generateAgentKeyPair();
-const flaggedKeys = generateAgentKeyPair();
+
+/** The buyer agent's public key. Also the `author` of every card it posts. */
+export const BUYER_AGENT_ID = buyerKeys.publicKeyRaw;
+
+/** The roster label both sides know before either has posted anything. */
+export const BUYER_LABEL = "Harbourline-Sourcing-Agent.demo";
+
+/* ------------------------------------------------------------------ *
+ * The counterparties
+ * ------------------------------------------------------------------ */
+
+interface SupplierSeed {
+  room_id: string;
+  /** Roster label — knowable in advance, unlike a key minted at run time. */
+  label: string;
+  display_name: string;
+  owner: { name: string; contact: string };
+  capabilities: string[];
+  policy: { may_disclose: string[]; must_not_disclose: string[] };
+  /** Authority claims lapse after this instant; key authentication does not. */
+  expires_at: string | null;
+  /** What the local, synthetic list check says about this counterparty. */
+  screening: { matched: boolean; reason?: string };
+  /** Whether owner-binding evidence was supplied at all. */
+  owner_binding: boolean;
+}
+
+const SUPPLIERS: SupplierSeed[] = [
+  {
+    room_id: "room-northwind",
+    label: "Northwind-Supply-Agent.demo",
+    display_name: "Northwind Supply Agent",
+    owner: { name: "Northwind Supply Co.", contact: "sales@northwind-supply.example" },
+    capabilities: ["negotiate-price", "verify-spec"],
+    policy: {
+      may_disclose: ["spec", "quantity", "unit_price", "lead_time_days"],
+      must_not_disclose: ["cost-basis", "capacity-headroom"],
+    },
+    // Already expired: the authority claims lapse, the key still authenticates.
+    expires_at: "2026-10-01T00:00:00Z",
+    screening: { matched: false },
+    owner_binding: true,
+  },
+  {
+    room_id: "room-delta",
+    label: "Delta-Parts-Agent.demo",
+    display_name: "Delta Parts Agent",
+    owner: { name: "Delta Parts Ltd.", contact: "trade@delta-parts.example" },
+    capabilities: ["negotiate-price", "verify-spec", "capacity-check"],
+    policy: {
+      may_disclose: ["spec", "quantity", "unit_price", "lead_time_days", "incoterms"],
+      must_not_disclose: ["cost-basis", "tooling-cost"],
+    },
+    expires_at: "2026-12-31T00:00:00Z",
+    screening: { matched: false },
+    owner_binding: true,
+  },
+  {
+    room_id: "room-orion",
+    label: "Orion-Components-Agent.demo",
+    display_name: "Orion Components Agent",
+    owner: { name: "Orion Components A.S.", contact: "sales@orion-components.example" },
+    capabilities: ["negotiate-price", "verify-spec"],
+    policy: {
+      may_disclose: ["spec", "quantity", "unit_price"],
+      must_not_disclose: ["cost-basis", "minimum-margin"],
+    },
+    expires_at: "2026-12-31T00:00:00Z",
+    screening: { matched: false },
+    owner_binding: true,
+  },
+  {
+    room_id: "room-vega",
+    label: "Vega-Metals-Agent.demo",
+    display_name: "Vega Metals Agent",
+    owner: { name: "Vega Metals Pvt. Ltd.", contact: "export@vega-metals.example" },
+    capabilities: ["negotiate-price", "capacity-check"],
+    policy: {
+      may_disclose: ["spec", "quantity", "lead_time_days"],
+      must_not_disclose: ["cost-basis", "capacity-headroom"],
+    },
+    expires_at: "2026-11-15T00:00:00Z",
+    screening: { matched: false },
+    owner_binding: true,
+  },
+  {
+    room_id: "room-shell",
+    label: "Shell-Co-Agent.demo",
+    display_name: "Shell Co Agent",
+    owner: { name: "Shell Co Trading", contact: "ops@shell-co.example" },
+    capabilities: ["negotiate-price"],
+    policy: { may_disclose: ["spec", "quantity"], must_not_disclose: [] },
+    expires_at: null,
+    screening: {
+      matched: true,
+      reason: "synthetic flag: registered entity dissolved in the demo dataset",
+    },
+    owner_binding: false,
+  },
+];
+
+/** Rooms whose counterparty has a seeded agent card. */
+export const SUPPLIER_ROOMS: readonly string[] = SUPPLIERS.map((s) => s.room_id);
+
+/** One key pair per supplier, minted once per process and never written to disk.
+ * The agent key signs result cards; the owner key signs the owner binding, so a
+ * receiver can check that the owner's key — not the agent's — vouches for it.
+ */
+const SUPPLIER_KEYS = new Map<string, { agent: KeyPairLike; owner: KeyPairLike }>(
+  SUPPLIERS.map((s) => [s.room_id, { agent: generateAgentKeyPair(), owner: generateAgentKeyPair() }]),
+);
+
+function keysFor(roomId: string): { agent: KeyPairLike; owner: KeyPairLike } {
+  const found = SUPPLIER_KEYS.get(roomId);
+  if (!found) throw new Error(`no seeded supplier agent for ${roomId}`);
+  return found;
+}
+
+/** The counterparty agent's public key in a room — the `author` of its cards. */
+export function supplierAgentId(roomId: string): string {
+  return keysFor(roomId).agent.publicKeyRaw;
+}
+
+/**
+ * Sign a value with a seeded agent's own private key.
+ *
+ * The private keys stay in this module; `seed.ts` posts result cards by asking
+ * for a signature rather than by holding a key. That mirrors the outside world,
+ * where an issuer signs and the layer only ever receives the signed artefact.
+ */
+export function signAsAgent(agentId: string, value: unknown): string {
+  const keys = agentId === BUYER_AGENT_ID ? buyerKeys : [...SUPPLIER_KEYS.values()].find((k) => k.agent.publicKeyRaw === agentId)?.agent;
+  if (!keys) throw new Error(`no seeded private key for agent ${agentId.slice(0, 12)}…`);
+  return signValue(value, keys.privateKey);
+}
+
+/**
+ * A standalone issuer with no agent card of its own.
+ *
+ * Used for seeded counterparties that are not part of the procurement story —
+ * the multi-party room's three friends. They still post genuinely signed cards,
+ * so no card on the board is a card nobody signed.
+ */
+export function mintIssuer(): { agent_id: string; sign: (value: unknown) => string } {
+  const keys = generateAgentKeyPair();
+  return { agent_id: keys.publicKeyRaw, sign: (value) => signValue(value, keys.privateKey) };
+}
+
+/* ------------------------------------------------------------------ *
+ * Card construction
+ * ------------------------------------------------------------------ */
 
 function evidence(
   producer: KeyPairLike,
@@ -52,6 +210,58 @@ function finalize(card: Omit<AgentCard, "sig">, keys: KeyPairLike): AgentCard {
   return { ...card, sig: signValue(card, keys.privateKey) };
 }
 
+/** The three claims every seeded agent makes, with the evidence it actually has. */
+function claimsFor(
+  seed: SupplierSeed,
+  keys: { agent: KeyPairLike; owner: KeyPairLike },
+  agentId: string,
+): AgentCard["claims"] {
+  return {
+    key_control: claim(
+      "evidence",
+      evidence(keys.agent, "signature", "ed25519-over-card", "self", { agent_id: agentId }),
+      "The card signature itself — verifiable by anyone.",
+    ),
+    owner_binding: seed.owner_binding
+      ? claim(
+          "evidence",
+          evidence(keys.owner, "domain-challenge", "owner-key-signs-challenge", "owner", {
+            agent_id: agentId,
+            nonce: seed.room_id.replace(/^room-/, ""),
+            contact: seed.owner.contact,
+            scope: "key-control-only",
+          }),
+          "Proves the owner's key controls this agent key. Not a legal identity, not company authority.",
+        )
+      : // Nothing claimed that cannot be shown.
+        claim("unverified", null, "No owner-binding evidence supplied."),
+    capability_probe: claim(
+      "self_reported",
+      evidence(keys.agent, "probe-result", "probe.constraint-check.v1", "self", {
+        agent_id: agentId,
+        probe: "constraint-check",
+        result: "pass",
+      }),
+      seed.screening.matched
+        ? "Self-reported, and the screening result below contradicts the claim."
+        : "Self-reported. Proves authorship of the result, not independent execution.",
+    ),
+    screening: claim(
+      "self_reported",
+      evidence(keys.agent, "list-check", "local-list-check-v1", "self", {
+        agent_id: agentId,
+        list: "synthetic-demo-list-v1",
+        list_version: "2026-10-13",
+        matched: seed.screening.matched,
+        ...(seed.screening.reason ? { match_reason: seed.screening.reason } : {}),
+      }),
+      seed.screening.matched
+        ? "Self-reported list match — the room holds negotiation until a human clears it."
+        : "Self-reported. A local list check — no independent authority is involved.",
+    ),
+  };
+}
+
 /** A well-formed buyer agent. */
 export function demoBuyerCard(): AgentCard {
   const agentId = buyerKeys.publicKeyRaw;
@@ -60,8 +270,8 @@ export function demoBuyerCard(): AgentCard {
       type: "agent_card",
       v: 1,
       agent_id: agentId,
-      display_name: "Acme Buyer Agent",
-      owner: { name: "Acme Corp", contact: "procurement@acme.example" },
+      display_name: "Harbourline Sourcing Agent",
+      owner: { name: "Harbourline Retail Group", contact: "sourcing@harbourline.example" },
       purpose: ["commercial-terms"],
       capabilities: ["negotiate-price", "verify-spec", "constraint-check"],
       owner_policy: {
@@ -80,7 +290,7 @@ export function demoBuyerCard(): AgentCard {
           evidence(buyerOwnerKeys, "domain-challenge", "owner-key-signs-challenge", "owner", {
             agent_id: agentId,
             nonce: "a7f3c1e0",
-            contact: "procurement@acme.example",
+            contact: "sourcing@harbourline.example",
             scope: "key-control-only",
           }),
           "Proves the owner's key controls this agent key. Not a legal identity, not company authority.",
@@ -113,103 +323,49 @@ export function demoBuyerCard(): AgentCard {
   );
 }
 
-/** A counterparty whose self-reported screening result trips the synthetic list. */
-export function demoFlaggedCard(): AgentCard {
-  const agentId = flaggedKeys.publicKeyRaw;
+/** The counterparty agent's card in one room. Every seeded room has one. */
+export function supplierCard(roomId: string): AgentCard {
+  const seed = SUPPLIERS.find((s) => s.room_id === roomId);
+  if (!seed) throw new Error(`no seeded supplier agent for ${roomId}`);
+  const keys = keysFor(roomId);
+  const agentId = keys.agent.publicKeyRaw;
   return finalize(
     {
       type: "agent_card",
       v: 1,
       agent_id: agentId,
-      display_name: "Shell-Co Agent",
-      owner: { name: "Shell Co", contact: "ops@shell-co.example" },
+      display_name: seed.display_name,
+      owner: seed.owner,
       purpose: ["commercial-terms"],
-      capabilities: ["negotiate-price"],
-      owner_policy: { may_disclose: ["spec", "quantity"], must_not_disclose: [] },
-      claims: {
-        key_control: claim(
-          "evidence",
-          evidence(flaggedKeys, "signature", "ed25519-over-card", "self", { agent_id: agentId }),
-        ),
-        // Nothing claimed that cannot be shown.
-        owner_binding: claim("unverified", null, "No owner-binding evidence supplied."),
-        capability_probe: claim(
-          "self_reported",
-          evidence(flaggedKeys, "probe-result", "probe.constraint-check.v1", "self", {
-            agent_id: agentId,
-            probe: "constraint-check",
-            result: "pass",
-          }),
-          "Self-reported, and the screening result below contradicts the claim.",
-        ),
-        screening: claim(
-          "self_reported",
-          evidence(flaggedKeys, "list-check", "local-list-check-v1", "self", {
-            agent_id: agentId,
-            list: "synthetic-demo-list-v1",
-            list_version: "2026-10-13",
-            matched: true,
-            match_reason: "synthetic flag: dissolved entity",
-          }),
-          "Self-reported list match — the room holds negotiation until a human clears it.",
-        ),
-      },
-      expires_at: null,
+      capabilities: seed.capabilities,
+      owner_policy: seed.policy,
+      claims: claimsFor(seed, keys, agentId),
+      expires_at: seed.expires_at,
       revocation: { revoked: false, reason: null, at: null },
     },
-    flaggedKeys,
+    keys.agent,
   );
+}
+
+/** The roster label a room's counterparty uses in result cards. */
+export function supplierLabel(roomId: string): string {
+  const seed = SUPPLIERS.find((s) => s.room_id === roomId);
+  if (!seed) throw new Error(`no seeded supplier agent for ${roomId}`);
+  return seed.label;
+}
+
+/* ------------------------------------------------------------------ *
+ * Named aliases the rest of the app reads
+ * ------------------------------------------------------------------ */
+
+/** A counterparty whose self-reported screening result trips the synthetic list. */
+export function demoFlaggedCard(): AgentCard {
+  return supplierCard("room-shell");
 }
 
 /** A card whose authority claims have lapsed but whose key still authenticates. */
 export function demoExpiredCard(): AgentCard {
-  const agentId = supplierKeys.publicKeyRaw;
-  return finalize(
-    {
-      type: "agent_card",
-      v: 1,
-      agent_id: agentId,
-      display_name: "Northwind Supply Agent",
-      owner: { name: "Northwind Supply", contact: "sales@northwind.example" },
-      purpose: ["commercial-terms"],
-      capabilities: ["negotiate-price", "verify-spec"],
-      owner_policy: { may_disclose: ["spec", "quantity", "lead-time"], must_not_disclose: ["cost-basis"] },
-      claims: {
-        key_control: claim(
-          "evidence",
-          evidence(supplierKeys, "signature", "ed25519-over-card", "self", { agent_id: agentId }),
-        ),
-        owner_binding: claim(
-          "evidence",
-          evidence(supplierOwnerKeys, "domain-challenge", "owner-key-signs-challenge", "owner", {
-            agent_id: agentId,
-            nonce: "b2d4",
-            contact: "sales@northwind.example",
-            scope: "key-control-only",
-          }),
-        ),
-        capability_probe: claim(
-          "self_reported",
-          evidence(supplierKeys, "probe-result", "probe.constraint-check.v1", "self", {
-            agent_id: agentId,
-            probe: "constraint-check",
-            result: "pass",
-          }),
-        ),
-        screening: claim(
-          "self_reported",
-          evidence(supplierKeys, "list-check", "local-list-check-v1", "self", {
-            agent_id: agentId,
-            matched: false,
-          }),
-        ),
-      },
-      // Already expired: authority claims lapse, key authentication does not.
-      expires_at: "2026-10-01T00:00:00Z",
-      revocation: { revoked: false, reason: null, at: null },
-    },
-    supplierKeys,
-  );
+  return supplierCard("room-northwind");
 }
 
 /** Re-check the card signature — key authentication (L0), independent of claims. */

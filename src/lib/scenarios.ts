@@ -25,10 +25,17 @@ export const SCENARIOS: Scenario[] = [
   {
     id: "commercial-terms",
     label: "Commercial terms",
-    blurb: "Two agents converge on spec, quantity, price and lead time — or reach a clean impasse.",
+    blurb: "Two agents converge on item, quantity, price, incoterms and lead time — or reach a clean impasse.",
     multiParty: false,
     theme: "Retail & Commerce",
-    termFields: ["spec", "quantity", "unit_price", "lead_time_days"],
+    termFields: [
+      "spec",
+      "quantity",
+      "unit_price",
+      "incoterms",
+      "payment_terms",
+      "lead_time_days",
+    ],
     completion: "All required parties post an agreed card over the same terms hash.",
   },
   {

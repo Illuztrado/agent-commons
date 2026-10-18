@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { listRooms, readResultCards, verifyTerms } from "@/lib/outcome-service";
 import type { RoomSummary } from "@/lib/transport";
-import { hasGeminiKey, generateText } from "@/lib/gemini";
+import { llmConfig, llmGenerateText } from "@/lib/llm";
 
 /**
  * POST /api/guide
@@ -16,8 +16,12 @@ import { hasGeminiKey, generateText } from "@/lib/gemini";
  *   - explain_card(room_id)   -> the result cards behind a room
  *   - verify_terms(terms)     -> recompute the hash from terms alone
  *
- * If GEMINI_API_KEY is absent (BYOK), it falls back to deterministic answers
- * so the demo never breaks — and the fallback is always labelled.
+ * Which model answers is decided in `@/lib/llm`: Gemini when a Gemini key is
+ * configured, otherwise an OpenAI-compatible endpoint if one is, otherwise no
+ * model at all. Every response says which one it was — `source` carries the
+ * provider and `model` carries the model id — so an answer produced by a test
+ * provider can never be mistaken for a Gemini call. With nothing configured it
+ * falls back to deterministic answers, and says that too.
  */
 
 const PRODUCT_ONE_LINER =
@@ -44,6 +48,17 @@ interface Grounding {
   focusRoom?: RoomSummary;
   focusCards?: unknown[];
 }
+
+/**
+ * Answers already given, for this question against this exact board.
+ *
+ * Bounded and process-local on purpose: the deployed service runs one instance,
+ * and a cache that survives too long would be a cache that lies about a board
+ * someone has since changed. Keying on the grounding text is what makes that
+ * safe — if a card moves, the key moves with it.
+ */
+const ANSWER_CACHE = new Map<string, string>();
+const ANSWER_CACHE_LIMIT = 50;
 
 async function ground(question: string, roomId?: string): Promise<Grounding> {
   // The board is read through the one definition of the product's read
@@ -125,6 +140,21 @@ async function verifyTermsTool(terms: Record<string, unknown>): Promise<string> 
   return `Recomputed hash from terms alone: ${hash}\n${onBoard}`;
 }
 
+/**
+ * Why the call failed, in one clause a reader can act on.
+ *
+ * The provider's own message for a spent free tier is a wall of JSON with the
+ * method name and service metadata inside it. That must not be pasted into the
+ * answer: it would appear on screen mid-demo and read as a crash.
+ */
+function failureReason(e: unknown): string {
+  const text = e instanceof Error ? e.message : String(e);
+  if (/RESOURCE_EXHAUSTED|\b429\b|quota|rate limit/i.test(text)) return "quota or rate limit";
+  if (/API key|\b401\b|\b403\b|PERMISSION_DENIED|unauthenticated/i.test(text)) return "the key was rejected";
+  if (/timeout|ETIMEDOUT|fetch failed|ECONN|ENOTFOUND/i.test(text)) return "network";
+  return "provider error";
+}
+
 export async function POST(request: Request) {
   let body: Record<string, unknown> = {};
   try {
@@ -142,18 +172,42 @@ export async function POST(request: Request) {
       tool: "verify_terms",
       result: await verifyTermsTool(body.terms as Record<string, unknown>),
       source: "deterministic",
+      model: "none",
     });
   }
 
   const g = await ground(question, roomId);
   const fallback = deterministicAnswer(question, g);
+  const config = llmConfig();
+  const context = compactContext(g);
 
-  if (!hasGeminiKey()) {
+  if (!config.configured) {
     return NextResponse.json({
       role: "demo-assistant",
-      answer: fallback ?? `${PRODUCT_ONE_LINER}\n(Gemini key not configured — this is the deterministic fallback path.)`,
+      answer:
+        fallback ??
+        `${PRODUCT_ONE_LINER}\n(No model configured — this is the deterministic fallback path.)`,
       source: "deterministic-fallback",
-      grounded: compactContext(g),
+      model: "none",
+      grounded: context,
+    });
+  }
+
+  // One free-tier key has to cover a recording session and then however many
+  // judges open the link. The suggested questions are buttons, so the same
+  // question gets asked twice routinely — and the second ask costs a call plus
+  // several seconds to produce a word-for-word identical answer. The key carries
+  // the grounding text, so a board that has changed never serves a stale answer.
+  const cacheKey = `${config.provider}|${config.model}|${question}|${context}`;
+  const cached = ANSWER_CACHE.get(cacheKey);
+  if (cached) {
+    return NextResponse.json({
+      role: "demo-assistant",
+      answer: cached,
+      source: config.provider,
+      model: config.model,
+      grounded: context,
+      cached: true,
     });
   }
 
@@ -166,15 +220,32 @@ export async function POST(request: Request) {
     `Live board context:\n${compactContext(g)}`;
 
   try {
-    const answer = await generateText(question, { systemInstruction, temperature: 0.3 });
-    return NextResponse.json({ role: "demo-assistant", answer, source: "gemini", grounded: compactContext(g) });
-  } catch (e) {
-    // Key present but the call failed — degrade honestly, never fabricate.
+    const answer = await llmGenerateText(question, { systemInstruction, temperature: 0.3 });
+    if (ANSWER_CACHE.size >= ANSWER_CACHE_LIMIT) {
+      const oldest = ANSWER_CACHE.keys().next().value;
+      if (oldest !== undefined) ANSWER_CACHE.delete(oldest);
+    }
+    ANSWER_CACHE.set(cacheKey, answer);
     return NextResponse.json({
       role: "demo-assistant",
-      answer: `${fallback ?? "The guide is unavailable right now."} (Gemini call failed: ${e instanceof Error ? e.message : String(e)} — showing the deterministic fallback.)`,
+      answer,
+      source: config.provider,
+      model: config.model,
+      grounded: context,
+    });
+  } catch (e) {
+    // A model is configured but the call failed — degrade honestly, never fabricate.
+    // The answer stays clean and the failure is disclosed on its own line, so a
+    // spent quota produces a readable fallback instead of a stack trace on screen.
+    const reason = failureReason(e);
+    console.warn("guide: model call failed —", reason, e);
+    return NextResponse.json({
+      role: "demo-assistant",
+      answer: fallback ?? `${PRODUCT_ONE_LINER}\n(The guide could not answer that from the board.)`,
       source: "deterministic-fallback",
-      grounded: compactContext(g),
+      model: config.model,
+      note: `The model call failed (${reason}), so this is the fixed fallback answer — not a model answer.`,
+      grounded: context,
     });
   }
 }
