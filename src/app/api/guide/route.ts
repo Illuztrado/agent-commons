@@ -34,7 +34,12 @@ const WHAT_IT_DOES_NOT_DO = [
   "no legal signature validity",
   "no real-world identity verification",
   "no agent framework or orchestration — agents run on each party's own stack",
-  "no conversation storage — the board shows outcomes only",
+  // Not "no conversation storage": send() does persist a message body, and a
+  // judge who posts one can see that it did. What is true, and what actually
+  // matters, is that nothing reads it back — no page, no verification, no
+  // outcome depends on a message. Saying it the other way is the one sentence
+  // here that a single call could disprove.
+  "no conversation in the outcome path — a message may be stored, but nothing reads it back and no result depends on it",
 ].join("; ");
 
 const THREE_STATES =

@@ -10,7 +10,7 @@
  *
  * The six things that must be true for the submission to be honest:
  *   1. the app answers at all
- *   2. the board is backed by Firestore, not an empty in-memory seed
+ *   2. the board is backed by Firestore, not an in-memory seed
  *   3. the MCP gate is reachable anonymously from the public internet
  *   4. the issuer key directory is populated (cards are really signed)
  *   5. the board and a deal page still render with no session — a login wall
@@ -29,10 +29,25 @@ function record(ok, label, detail) {
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}${detail ? `  — ${detail}` : ""}`);
 }
 
+// A single dropped connection must not read as a failed check. This script is
+// the last gate before submitting, and it is run over whatever network happens
+// to be available; a transient `fetch failed` on the home page would say the
+// deployment is broken when it is not. Retry twice with a short backoff, and
+// only then let the error surface. A 4xx/5xx is an answer, not a failure to
+// reach the server, so those are returned immediately.
 async function req(path, init) {
-  const res = await fetch(base + path, init);
-  const text = await res.text();
-  return { status: res.status, text };
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const res = await fetch(base + path, init);
+      const text = await res.text();
+      return { status: res.status, text };
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+    }
+  }
+  throw lastError;
 }
 
 // 1 — the app answers.
@@ -46,12 +61,37 @@ try {
 // 2 — the board is really populated (seedIfEmpty ran against Firestore).
 // The home page carries the funnel and renders server-side; /board fills in on
 // the client, so its HTML alone says nothing about the data behind it.
+//
+// Harbourline appearing is necessary but not sufficient: an in-memory seed
+// renders the same HTML, so the page cannot tell Firestore from process memory.
+// /api/health reports which transport the instance actually selected, and that
+// is the only claim the brief makes that cannot be read off a page.
 try {
   const { status, text } = await req("/");
   const hasBuyer = text.includes("Harbourline");
-  record(status === 200 && hasBuyer, "home page shows the seeded sourcing round", hasBuyer ? "Harbourline present" : "no Harbourline in HTML");
+  const healthRes = await req("/api/health");
+  if (healthRes.status !== 200) {
+    // A 404 here is not a mystery: it is an instance older than this check.
+    record(
+      false,
+      "board is backed by Firestore, not process memory",
+      `no /api/health on this deployment (http ${healthRes.status}) — it predates the transport check`,
+    );
+    console.log("      -> redeploy from current main; the old build cannot prove which transport it runs.");
+  } else {
+    const health = JSON.parse(healthRes.text);
+    const onFirestore = health.transport === "firestore";
+    record(
+      status === 200 && hasBuyer && onFirestore,
+      "board is backed by Firestore, not process memory",
+      `Harbourline ${hasBuyer ? "present" : "missing"} · transport=${health.transport ?? "unknown"}`,
+    );
+    if (!onFirestore) {
+      console.log("      -> the brief says cards live in Firestore. Set TRANSPORT=firestore and redeploy.");
+    }
+  }
 } catch (error) {
-  record(false, "home page shows the seeded sourcing round", String(error));
+  record(false, "board is backed by Firestore, not process memory", String(error));
 }
 
 // 3 — the gate is open to the public internet, no session, no login.
